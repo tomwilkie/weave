@@ -728,9 +728,12 @@ type TestGossipRouter struct {
 	loss        float32 // 0.0 means no loss
 }
 
-func (router TestGossipRouter) GossipBroadcast(buf []byte) error {
+func (router *TestGossipRouter) GossipBroadcast(buf []byte) error {
 	for _, gossipChan := range router.gossipChans {
-		gossipChan <- gossipMessage{false, nil, buf}
+		select {
+		case gossipChan <- gossipMessage{false, nil, buf}:
+		default: // drop the message if we cannot send it
+		}
 	}
 	return nil
 }
@@ -740,31 +743,39 @@ type TestGossipRouterClient struct {
 	sender router.PeerName
 }
 
-func (router *TestGossipRouter) connect(sender router.PeerName, gossiper router.Gossiper) router.Gossip {
+func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router.Gossiper) router.Gossip {
 	gossipChan := make(chan gossipMessage, 100)
 
 	go func() {
+		gossipTimer := time.Tick(router.GossipInterval)
 		for {
-			message := <-gossipChan
-			if rand.Float32() > (1.0 - router.loss) {
-				continue
-			}
+			select {
+			case message := <-gossipChan:
+				if rand.Float32() > (1.0 - grouter.loss) {
+					continue
+				}
 
-			if message.isUnicast {
-				gossiper.OnGossipUnicast(*message.sender, message.buf)
-			} else {
-				gossiper.OnGossipBroadcast(message.buf)
+				if message.isUnicast {
+					gossiper.OnGossipUnicast(*message.sender, message.buf)
+				} else {
+					gossiper.OnGossipBroadcast(message.buf)
+				}
+			case <-gossipTimer:
+				grouter.GossipBroadcast(gossiper.(router.GossipData).Encode(gossiper.(router.GossipData).FullSet()))
 			}
 		}
 	}()
 
-	router.gossipChans[sender] = gossipChan
-	return TestGossipRouterClient{router, sender}
+	grouter.gossipChans[sender] = gossipChan
+	return TestGossipRouterClient{grouter, sender}
 }
 
 func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, buf []byte) error {
 	common.Debug.Printf("GossipUnicast from %s to %s", client.sender, dstPeerName)
-	client.router.gossipChans[dstPeerName] <- gossipMessage{true, &client.sender, buf}
+	select {
+	case client.router.gossipChans[dstPeerName] <- gossipMessage{true, &client.sender, buf}:
+	default: // drop the message if we cannot send it
+	}
 	return nil
 }
 
@@ -849,11 +860,11 @@ func implTestCancel(t *testing.T) {
 func BenchmarkAllocator(b *testing.B) {
 	common.InitDefaultLogging(true)
 	const (
-		firstpass    = 1000
+		firstpass    = 1022
 		secondpass   = 5000
 		nodes        = 50
-		maxAddresses = 1000
-		concurrency  = 10
+		maxAddresses = 1022
+		concurrency  = 50
 		cidr         = "10.0.1.7/22"
 	)
 	allocs, _ := makeNetworkOfAllocators(nodes, cidr)
@@ -871,6 +882,7 @@ func BenchmarkAllocator(b *testing.B) {
 	// Keep a list of addresses issued, so we
 	// Can pick random ones
 	addrs := make([]string, 0)
+	numPending := 0
 
 	rand.Seed(0)
 
@@ -886,6 +898,14 @@ func BenchmarkAllocator(b *testing.B) {
 	// is unique.  Needs a unique container
 	// name.
 	getFor := func(name string) {
+		stateLock.Lock()
+		if len(addrs)+numPending >= maxAddresses {
+			stateLock.Unlock()
+			return
+		}
+		numPending++
+		stateLock.Unlock()
+
 		allocIndex := rand.Int31n(nodes)
 		alloc := allocs[allocIndex]
 		common.Info.Printf("GetFor: asking allocator %d", allocIndex)
@@ -908,13 +928,18 @@ func BenchmarkAllocator(b *testing.B) {
 
 		state[addrStr] = result{name, allocIndex}
 		addrs = append(addrs, addrStr)
+		numPending--
 	}
 
 	// Free a random address.
 	free := func() {
+		stateLock.Lock()
+		if len(addrs) == 0 {
+			stateLock.Unlock()
+			return
+		}
 		// Delete an existing allocation
 		// Pick random addr
-		stateLock.Lock()
 		addrIndex := rand.Int31n(int32(len(addrs)))
 		addr := addrs[addrIndex]
 		res := state[addr]
@@ -979,12 +1004,12 @@ func BenchmarkAllocator(b *testing.B) {
 	doConcurrentIterations(secondpass, func(iteration int) {
 		r := rand.Float32()
 		switch {
-		case 0.0 <= r && r < 0.4 && len(addrs) < maxAddresses:
+		case 0.0 <= r && r < 0.4:
 			// Ask for a new allocation
 			name := fmt.Sprintf("second%d", iteration)
 			getFor(name)
 
-		case (0.4 <= r && r < 0.8) || len(addrs) >= maxAddresses:
+		case (0.4 <= r && r < 0.8):
 			// free a random addr
 			free()
 
