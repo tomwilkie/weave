@@ -463,8 +463,14 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 				alloc.handleDead(q.uid)
 			case listPeers:
 				result := make(map[string]PeerInfo)
-				for k, v := range alloc.peerInfo {
-					result[strconv.FormatUint(k, 10)] = PeerInfo{v.PeerName().String(), v.MaybeDead()}
+				for uid, entry := range alloc.peerInfo {
+					peerEntry, ok := entry.(*PeerSpaceSet)
+					if ok && peerEntry.IsTombstone() {
+						continue
+					}
+
+					info := PeerInfo{entry.PeerName().String(), entry.MaybeDead()}
+					result[strconv.FormatUint(uid, 10)] = info
 				}
 				q.resultChan <- result
 			case removePeer:
