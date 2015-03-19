@@ -127,7 +127,7 @@ func (alloc *Allocator) HandleHttp(mux *http.ServeMux) {
 			}
 
 			if err := alloc.RemovePeer(ident); err != nil {
-				httpErrorAndLog(Warning, w, "Cannot remove host", http.StatusBadRequest, err.Error())
+				httpErrorAndLog(Warning, w, "Cannot remove peer", http.StatusBadRequest, err.Error())
 				return
 			}
 
