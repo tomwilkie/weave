@@ -7,7 +7,9 @@ import (
 	wt "github.com/zettio/weave/testing"
 	"math/rand"
 	"net"
+	"reflect"
 	"sort"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -991,4 +993,47 @@ func BenchmarkAllocator(b *testing.B) {
 			getForAgain()
 		}
 	})
+}
+
+func TestRemovePeer(t *testing.T) {
+	common.InitDefaultLogging(true)
+	const (
+		nodes = 2
+		cidr  = "10.0.1.7/22"
+	)
+	allocs, _ := makeNetworkOfAllocators(nodes, cidr)
+	alloc1 := allocs[0]
+	alloc2 := allocs[1]
+	alloc1.OnGossipBroadcast(alloc2.Encode(alloc2.FullSet()))
+	alloc2.OnGossipBroadcast(alloc1.Encode(alloc1.FullSet()))
+	alloc1Uid := strconv.FormatUint(alloc1.ourUID, 10)
+
+	// first check they agree on peers
+	peers1 := alloc1.ListPeers()
+	peers2 := alloc2.ListPeers()
+	if !reflect.DeepEqual(peers1, peers2) {
+		t.Fatalf("Allocators don't agree on peers, %s != %s", peers1, peers2)
+	}
+
+	// stop alloc1
+	alloc1.Stop()
+
+	// check alloc2 thinks 1 is dead
+	alloc2.OnDead(0, alloc1.ourUID)
+	peers2 = alloc2.ListPeers()
+	if !peers2[alloc1Uid].Dead {
+		t.Fatalf("Not dead yet, %s", peers2)
+	}
+
+	// remove alloc1 from 2
+	err := alloc2.RemovePeer(alloc1Uid)
+	if err != nil {
+		t.Fatalf("Couldn't remove peer")
+	}
+
+	// make sure alloc1 is not in the peers list any more
+	peers2 = alloc2.ListPeers()
+	if _, ok := peers2[alloc1Uid]; ok {
+		t.Fatalf("Peer 1 not removed, %s", peers2)
+	}
 }
