@@ -1,6 +1,7 @@
 package ipam
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	. "github.com/zettio/weave/common"
@@ -83,6 +84,57 @@ func (alloc *Allocator) HandleHttp(mux *http.ServeMux) {
 			} else if err = alloc.Free(ident, ip); err != nil {
 				httpErrorAndLog(Warning, w, "Invalid Free", http.StatusBadRequest, err.Error())
 			}
+
+		default:
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+		}
+	})
+
+	mux.HandleFunc("/peer", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			peers := alloc.ListPeers()
+			json.NewEncoder(w).Encode(peers)
+
+		default:
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+		}
+	})
+
+	mux.HandleFunc("/peer/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			ident, err := parseUrl(r.URL.Path)
+			if err != nil {
+				httpErrorAndLog(Warning, w, "Invalid request", http.StatusBadRequest, err.Error())
+				return
+			}
+
+			peers := alloc.ListPeers()
+			peer, ok := peers[ident]
+			if !ok {
+				httpErrorAndLog(Warning, w, "Not found", http.StatusNotFound, "")
+				return
+			}
+
+			json.NewEncoder(w).Encode(peer)
+
+		case "DELETE":
+			ident, err := parseUrl(r.URL.Path)
+			if err != nil {
+				httpErrorAndLog(Warning, w, "Invalid request", http.StatusBadRequest, err.Error())
+				return
+			}
+
+			if err := alloc.RemovePeer(ident); err != nil {
+				httpErrorAndLog(Warning, w, "Cannot remove host", http.StatusBadRequest, err.Error())
+				return
+			}
+
+			w.WriteHeader(204)
+
+		default:
+			http.Error(w, "Invalid request", http.StatusBadRequest)
 		}
 	})
 }

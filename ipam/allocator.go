@@ -8,6 +8,7 @@ import (
 	lg "github.com/zettio/weave/common"
 	"github.com/zettio/weave/router"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -189,6 +190,17 @@ type gossipReply struct {
 type onDead struct {
 	uid uint64
 }
+type PeerInfo struct {
+	Address string
+	Dead    bool
+}
+type listPeers struct {
+	resultChan chan<- map[string]PeerInfo
+}
+type removePeer struct {
+	uid        string
+	resultChan chan<- error
+}
 
 type claimList []claim
 
@@ -357,6 +369,18 @@ func (alloc *Allocator) OnDead(_ router.PeerName, uid uint64) {
 	alloc.queryChan <- onDead{uid}
 }
 
+func (alloc *Allocator) ListPeers() map[string]PeerInfo {
+	resultChan := make(chan map[string]PeerInfo)
+	alloc.queryChan <- listPeers{resultChan}
+	return <-resultChan
+}
+
+func (alloc *Allocator) RemovePeer(uid string) error {
+	resultChan := make(chan error)
+	alloc.queryChan <- removePeer{uid, resultChan}
+	return <-resultChan
+}
+
 // ACTOR server
 
 func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool) {
@@ -437,6 +461,18 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 				q.resultChan <- alloc.handleGossipFullSet()
 			case onDead:
 				alloc.handleDead(q.uid)
+			case listPeers:
+				result := make(map[string]PeerInfo)
+				for k, v := range alloc.peerInfo {
+					result[strconv.FormatUint(k, 10)] = PeerInfo{v.PeerName().String(), v.MaybeDead()}
+				}
+				q.resultChan <- result
+			case removePeer:
+				if uid, err := strconv.ParseUint(q.uid, 10, 64); err != nil {
+					q.resultChan <- err
+				} else {
+					q.resultChan <- alloc.removePeer(uid)
+				}
 			}
 		case <-slowTimer:
 			alloc.slowConsiderOurPosition()
@@ -513,17 +549,29 @@ func (alloc *Allocator) spaceOwner(space *MinSpace) uint64 {
 	return 0
 }
 
-func (alloc *Allocator) lookForDead(now time.Time) {
-	limit := now.Add(-GossipDeadTimeout)
-	for _, entry := range alloc.peerInfo {
-		if peerEntry, ok := entry.(*PeerSpaceSet); ok &&
-			peerEntry.MaybeDead() && !peerEntry.IsTombstone() &&
-			peerEntry.lastSeen.Before(limit) {
-			peerEntry.MakeTombstone()
-			lg.Debug.Println("Tombstoned", peerEntry)
-			alloc.gossip.GossipBroadcast(encode(peerEntry))
-		}
+func (alloc *Allocator) removePeer(uid uint64) error {
+	entry, ok := alloc.peerInfo[uid]
+	if !ok {
+		return errors.New("Not found")
 	}
+
+	peerEntry, ok := entry.(*PeerSpaceSet)
+	if !ok {
+		return errors.New("Not a peer - is this localhost?")
+	}
+
+	if !peerEntry.MaybeDead() {
+		return errors.New("Peer not dead.")
+	}
+
+	if peerEntry.IsTombstone() {
+		return errors.New("Peer already removed")
+	}
+
+	peerEntry.MakeTombstone()
+	lg.Debug.Println("Tombstoned", peerEntry)
+	alloc.gossip.GossipBroadcast(encode(peerEntry))
+	return nil
 }
 
 func (alloc *Allocator) lookForNewLeaks(now time.Time) {
@@ -699,7 +747,6 @@ func (alloc *Allocator) slowConsiderOurPosition() (changed bool) {
 	switch alloc.state {
 	case allocStateNeutral:
 		alloc.discardOldLeaks()
-		alloc.lookForDead(now)
 		changed = alloc.reclaimLeaks(now)
 		alloc.lookForNewLeaks(now)
 	}
