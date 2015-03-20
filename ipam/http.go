@@ -103,22 +103,6 @@ func (alloc *Allocator) HandleHttp(mux *http.ServeMux) {
 
 	mux.HandleFunc("/peer/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
-		case "GET":
-			ident, err := parseUrl(r.URL.Path)
-			if err != nil {
-				httpErrorAndLog(Warning, w, "Invalid request", http.StatusBadRequest, err.Error())
-				return
-			}
-
-			peers := alloc.ListPeers()
-			peer, ok := peers[ident]
-			if !ok {
-				httpErrorAndLog(Warning, w, "Not found", http.StatusNotFound, "")
-				return
-			}
-
-			json.NewEncoder(w).Encode(peer)
-
 		case "DELETE":
 			ident, err := parseUrl(r.URL.Path)
 			if err != nil {
