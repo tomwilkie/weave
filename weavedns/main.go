@@ -51,7 +51,7 @@ func main() {
 	var zone = new(weavedns.ZoneDb)
 
 	if watch {
-		err := weavedns.StartUpdater(apiPath, zone)
+		err := StartUpdater(apiPath, zone)
 		if err != nil {
 			Error.Fatal("Unable to start watcher", err)
 		}
@@ -83,11 +83,11 @@ func main() {
 		Debug.Printf("DNS fallback at %s:%s", fallbackHost, fallbackPort)
 	}
 
+	go weavedns.ListenHttp(localDomain, zone, httpPort)
 	srv, err := weavedns.NewDNSServer(srvConfig, zone, iface)
 	if err != nil {
 		Error.Fatal("Failed to initialize the WeaveDNS server", err)
 	}
-	go weavedns.ListenHttp(version, srv, localDomain, zone, httpPort)
 	err = srv.Start()
 	if err != nil {
 		Error.Fatal("Failed to start the WeaveDNS server", err)
