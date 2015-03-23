@@ -29,22 +29,27 @@ func (conn *mockChannelConnection) SendProtocolMsg(protocolMsg ProtocolMsg) {
 	if err := conn.dest.handleGossip(protocolMsg.msg, deliverGossip); err != nil {
 		panic(err)
 	}
-	conn.dest.sendAllPendingGossipUpdates()
+	conn.dest.sendPendingGossip()
 }
 
-func (router *Router) sendAllPendingGossipUpdates() {
+// FIXME this doesn't actually guarantee everything has been sent
+// since a GossipSender may be in the process of sending and there is
+// no easy way for us to know when that has completed.
+func (router *Router) sendPendingGossip() {
 	for _, channel := range router.GossipChannels {
-		for {
-			any_pending := false
-			for _, sender := range channel.senders {
-				for len(sender.pending.(peerNameSet)) > 0 {
-					any_pending = true
-					sender.sendAllPending()
-				}
-			}
-			if !any_pending {
-				break
-			}
+		for _, sender := range channel.senders {
+			sender.flush()
+		}
+	}
+}
+
+func (sender *GossipSender) flush() {
+	for {
+		select {
+		case pending := <-sender.cell:
+			sender.sendPending(pending)
+		default:
+			return
 		}
 	}
 }
@@ -62,7 +67,7 @@ func (router *Router) AddTestChannelConnection(r *Router) {
 	conn := &mockChannelConnection{RemoteConnection{router.Ourself.Peer, toPeer, "", false, true}, r}
 	router.Ourself.handleAddConnection(conn)
 	router.Ourself.handleConnectionEstablished(conn)
-	router.sendAllPendingGossipUpdates()
+	router.sendPendingGossip()
 }
 
 func (router *Router) DeleteTestChannelConnection(r *Router) {
@@ -77,7 +82,7 @@ func (router *Router) DeleteTestChannelConnection(r *Router) {
 
 	conn, _ := router.Ourself.ConnectionTo(toName)
 	router.Ourself.handleDeleteConnection(conn)
-	router.sendAllPendingGossipUpdates()
+	router.sendPendingGossip()
 }
 
 func TestGossipTopology(t *testing.T) {
