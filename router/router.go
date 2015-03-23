@@ -67,7 +67,7 @@ func NewRouter(iface *net.Interface, name PeerName, nickName string, password []
 	router.Peers.FetchWithDefault(router.Ourself.Peer)
 	router.Routes = NewRoutes(router.Ourself.Peer, router.Peers)
 	router.ConnectionMaker = NewConnectionMaker(router.Ourself, router.Peers)
-	router.TopologyGossip = router.NewGossip("topology", router, router)
+	router.TopologyGossip = router.NewGossip("topology", router)
 	return router
 }
 
@@ -361,33 +361,36 @@ func (router *Router) OnGossipBroadcast(msg []byte) error {
 	return fmt.Errorf("unexpected topology gossip broadcast: %v", msg)
 }
 
-// Concrete implementation of GossipKeySet
+type PeerNameSet map[PeerName]bool
 
-type peerNameSet map[PeerName]bool
+type TopologyGossipData struct {
+	peers  *Peers
+	update PeerNameSet
+}
 
-func (a peerNameSet) Merge(b GossipKeySet) {
-	for key, _ := range b.(peerNameSet) {
-		a[key] = true
+func NewTopologyGossipData(peers *Peers, update ...*Peer) *TopologyGossipData {
+	names := make(PeerNameSet)
+	for _, p := range update {
+		names[p.Name] = true
+	}
+	return &TopologyGossipData{peers: peers, update: names}
+}
+
+func (d *TopologyGossipData) Merge(other GossipData) {
+	for name, _ := range other.(*TopologyGossipData).update {
+		d.update[name] = true
 	}
 }
 
-// GossipData interface methods
-
-func (router *Router) EmptySet() GossipKeySet {
-	return make(peerNameSet)
+func (d *TopologyGossipData) Encode() []byte {
+	return d.peers.EncodePeers(d.update)
 }
 
-func (router *Router) FullSet() GossipKeySet {
-	return router.Peers.AllKeys()
+func (router *Router) Gossip() GossipData {
+	return &TopologyGossipData{peers: router.Peers, update: router.Peers.Names()}
 }
 
-func (router *Router) Encode(keys GossipKeySet) []byte {
-	return router.Peers.Encode(keys.(peerNameSet))
-}
-
-// merge in state and return "everything new I've just learnt",
-// or nil if nothing in the received message was new
-func (router *Router) OnUpdate(buf []byte) (GossipKeySet, error) {
+func (router *Router) OnGossip(buf []byte) (GossipData, error) {
 	newUpdate, err := router.Peers.ApplyUpdate(buf)
 	if _, ok := err.(UnknownPeerError); err != nil && ok {
 		// That update contained a reference to a peer which wasn't
@@ -405,5 +408,5 @@ func (router *Router) OnUpdate(buf []byte) (GossipKeySet, error) {
 	}
 	router.ConnectionMaker.Refresh()
 	router.Routes.Recalculate()
-	return newUpdate, nil
+	return &TopologyGossipData{peers: router.Peers, update: newUpdate}, nil
 }

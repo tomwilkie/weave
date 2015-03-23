@@ -13,6 +13,28 @@ const (
 	allocStateLeaderless
 )
 
+const (
+	msgSpaceRequest = iota
+	msgLeaderElected
+)
+
+// GossipData implementation is trivial - we always gossip the whole ring
+type ipamGossipData struct {
+	alloc *Allocator
+}
+
+func (d *ipamGossipData) Merge(other router.GossipData) {
+	// no-op
+}
+
+func (d *ipamGossipData) Encode() []byte {
+	return d.alloc.Encode()
+}
+
+func (alloc *Allocator) Gossip() router.GossipData {
+	return &ipamGossipData{alloc}
+}
+
 type Allocator struct {
 	queryChan   chan<- interface{}
 	ourName     router.PeerName
@@ -62,4 +84,7 @@ func (alloc *Allocator) string() string {
 	}
 	buf.WriteString(fmt.Sprintf("Allocator state %s", state))
 	return buf.String()
+}
+
+func (alloc *Allocator) considerOurPosition() {
 }
