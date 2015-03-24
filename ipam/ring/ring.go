@@ -1,5 +1,8 @@
 /*
 Ring implements a simple ring CRDT.
+
+TODO: merge consequtively owned ranges
+TODO: implement tombstones
 */
 package ring
 
@@ -7,6 +10,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 	"net"
@@ -20,6 +24,11 @@ type entry struct {
 	Version   uint32          // Version of this range
 }
 
+func (e1 *entry) Equal(e2 *entry) bool {
+	return e1.Token == e2.Token && e1.Peer == e2.Peer &&
+		e1.Tombstone == e2.Tombstone && e1.Version == e2.Version
+}
+
 // For compatibility with sort.Interface
 type entries []entry
 
@@ -28,7 +37,7 @@ func (es entries) Less(i, j int) bool { return es[i].Token < es[j].Token }
 func (es entries) Swap(i, j int)      { panic("Should never be swapping entries!") }
 
 type Ring struct {
-	Start, End uint32          // [min, max] tokens in this ring.
+	Start, End uint32          // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
 	Entries    entries         // list of entries sorted by token
 }
@@ -46,10 +55,15 @@ func (r *Ring) assertInvariants() {
 	}
 }
 
+// Errors returned by merge
 var (
-	ErrNotSorted       = errors.New("Ring not sorted")
-	ErrTokenRepeated   = errors.New("Token appears twice in ring")
-	ErrTokenOutOfRange = errors.New("Token is out of range")
+	ErrNotSorted        = errors.New("Ring not sorted")
+	ErrTokenRepeated    = errors.New("Token appears twice in ring")
+	ErrTokenOutOfRange  = errors.New("Token is out of range")
+	ErrDifferentSubnets = errors.New("Cannot merge gossip for different subnet!")
+	ErrNewerVersion     = errors.New("Recieved new version for entry I own!")
+	ErrInvalidEntry     = errors.New("Recieved invalid state update!")
+	ErrEntryInMyRange   = errors.New("Recieved new entry in my range!")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -74,7 +88,7 @@ func (r *Ring) checkInvariants() error {
 		return ErrTokenOutOfRange
 	}
 
-	if r.Entries[len(r.Entries)-1].Token > r.End {
+	if r.Entries[len(r.Entries)-1].Token >= r.End {
 		return ErrTokenOutOfRange
 	}
 
@@ -96,11 +110,11 @@ func (r *Ring) insertAt(i int, e entry) {
 }
 
 // New creates an empty ring belonging to peer.
-func New(startIP, endIP net.IP, peer router.PeerName) Ring {
+func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
 	assert(start <= end, "Start needs to be less than end!")
 
-	return Ring{start, end, peer, make([]entry, 0)}
+	return &Ring{start, end, peer, make([]entry, 0)}
 }
 
 // Is token between entries at i and j?
@@ -127,8 +141,7 @@ func (r *Ring) between(token uint32, i, j int) bool {
 		return first.Token <= token || token < second.Token
 	}
 
-	assert(false, "Should never get here.")
-	return true
+	panic("Should never get here - switch covers all possibilities.")
 }
 
 // Grant range [start, end) to peer
@@ -137,8 +150,8 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
 	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
-	assert(r.Start <= start && start <= r.End, "Trying to grant range outside of subnet")
-	assert(r.Start <= end && end <= r.End, "Trying to grant range outside of subnet")
+	assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
+	assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
 	assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
 
 	// Look for the start entry
@@ -149,7 +162,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// Is start already owned by us, in which case we need
 	// to change the token and update version
 	if i < len(r.Entries) && r.Entries[i].Token == start {
-		entry := r.Entries[i]
+		entry := &r.Entries[i]
 		assert(entry.Peer == r.Peername, "Trying to mutate entry I don't own")
 		entry.Peer = peer
 		entry.Tombstone = 0
@@ -178,7 +191,11 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//        elses ranges.
 
 	k := i + 1
-	nextEntry := r.Entries[k%len(r.Entries)]
+	nextEntry := &r.Entries[k%len(r.Entries)]
+
+	// End needs wrapping
+	end = r.Start + ((end - r.Start) % (r.End - r.Start))
+
 	if nextEntry.Token == end {
 		// That was easy
 		return
@@ -190,7 +207,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 }
 
 // Merge the given ring into this ring.
-func (r *Ring) merge(gossip Ring) error {
+func (r *Ring) merge(gossip *Ring) error {
 	r.assertInvariants()
 
 	// Don't panic when checking the gossiped in ring.
@@ -200,7 +217,7 @@ func (r *Ring) merge(gossip Ring) error {
 	}
 
 	if r.Start != gossip.Start || r.End != gossip.End {
-		return errors.New("Cannot merge gossip for different subnet!")
+		return ErrDifferentSubnets
 	}
 
 	// We special case us having an empty ring -
@@ -227,24 +244,23 @@ func (r *Ring) merge(gossip Ring) error {
 		assert(existingEntry.Token == newEntry.Token, "WTF")
 		switch {
 		case existingEntry.Version == newEntry.Version:
-			if existingEntry != newEntry {
-				return nil, errors.New("Recieved invalid state update!")
+			if !existingEntry.Equal(newEntry) {
+				return nil, ErrInvalidEntry
 			}
 			return existingEntry, nil
 
 		case existingEntry.Version < newEntry.Version:
 			// A new token it getting inserted
 			if existingEntry.Peer == r.Peername {
-				return nil, errors.New("Recieved new version for entry I own!")
+				return nil, ErrNewerVersion
 			}
 			return newEntry, nil
 
 		case existingEntry.Version > newEntry.Version:
 			return newEntry, nil
 		}
-		// This should never be hit (switch covers all cases) but go doesn't detect that.
-		assert(false, "WTF")
-		return nil, nil
+
+		panic("Should never get here - switch covers all possibilities.")
 	}
 
 	// Make new slice for result; iterate over
@@ -268,7 +284,7 @@ func (r *Ring) merge(gossip Ring) error {
 		case i >= len(r.Entries) || r.Entries[i].Token > gossip.Entries[j].Token:
 			// A new token it getting inserted
 			if currentOwner == r.Peername {
-				return errors.New("Recieved new entry in my range!")
+				return ErrEntryInMyRange
 			}
 			result[k] = gossip.Entries[j]
 			j++
@@ -298,9 +314,9 @@ func (r *Ring) merge(gossip Ring) error {
 func (r *Ring) OnGossipBroadcast(msg []byte) error {
 	reader := bytes.NewReader(msg)
 	decoder := gob.NewDecoder(reader)
-	gossipedRing := Ring{}
+	gossipedRing := &Ring{}
 
-	if err := decoder.Decode(&gossipedRing); err != nil {
+	if err := decoder.Decode(gossipedRing); err != nil {
 		return err
 	}
 
@@ -329,5 +345,10 @@ func (r *Ring) ClaimItAll() {
 }
 
 func (r *Ring) String() string {
-	return ""
+	var buffer bytes.Buffer
+	for _, entry := range r.Entries {
+		fmt.Fprintf(&buffer, "%s -> %s (%d, %d)\n", utils.Intip4(entry.Token),
+			entry.Peer, entry.Tombstone, entry.Version)
+	}
+	return buffer.String()
 }
