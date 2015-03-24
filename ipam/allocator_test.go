@@ -110,7 +110,7 @@ func TestElection(t *testing.T) {
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 
 	//
-	alloc2.handleSpaceRequest(alloc1.ourName, alloc1.EncodeState())
+	alloc2.donateSpace(alloc1.ourName)
 
 	ExpectBroadcastMessage(alloc2, alloc2.EncodeState())
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
