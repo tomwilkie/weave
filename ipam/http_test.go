@@ -6,6 +6,7 @@ import (
 	wt "github.com/zettio/weave/testing"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func HttpGet(t *testing.T, url string) string {
 }
 
 func genHttp(method string, url string) (resp *http.Response, err error) {
-	req, err := http.NewRequest(method, url, nil)
+	req, _ := http.NewRequest(method, url, nil)
 	return http.DefaultClient.Do(req)
 }
 
@@ -30,8 +31,9 @@ func TestHttp(t *testing.T) {
 		containerID = "deadbeef"
 		container2  = "baddf00d"
 		container3  = "b01df00d"
-		testAddr1   = "10.0.3.5"
-		testCIDR1   = "10.0.3.5/29"
+		testAddr1   = "10.0.3.9"
+		netSuffix   = "/29"
+		testCIDR1   = "10.0.3.8" + netSuffix
 	)
 
 	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
@@ -41,26 +43,52 @@ func TestHttp(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond) // Allow for http server to get going
 
+	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
 	// Ask the http server for a new address
 	cidr1 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
-	wt.AssertEqualString(t, cidr1, testCIDR1, "address")
+	wt.AssertEqualString(t, cidr1, testAddr1+netSuffix, "address")
 
 	// Ask the http server for another address and check it's different
 	cidr2 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
-	wt.AssertNotEqualString(t, cidr2, testCIDR1, "address")
+	wt.AssertNotEqualString(t, cidr2, testAddr1+netSuffix, "address")
 
 	// Ask for the first container again and we should get the same address again
 	cidr1a := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
-	wt.AssertEqualString(t, cidr1a, testCIDR1, "address")
+	wt.AssertEqualString(t, cidr1a, testAddr1+netSuffix, "address")
 
 	// Now free the first one, and we should get it back when we ask
-	genHttp("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	alloc.Free(containerID, net.ParseIP(testAddr1))
 	cidr3 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
-	wt.AssertEqualString(t, cidr3, testCIDR1, "address")
+	wt.AssertEqualString(t, cidr3, testAddr1+netSuffix, "address")
 
 	// Would like to shut down the http server at the end of this test
 	// but it's complicated.
 	// See https://groups.google.com/forum/#!topic/golang-nuts/vLHWa5sHnCE
+}
+
+func TestBadHttp(t *testing.T) {
+	var (
+		containerID = "deadbeef"
+		testCIDR1   = "10.0.0.0/8"
+		testAddr1   = "10.0.3.9"
+	)
+
+	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
+	port := rand.Intn(10000) + 32768
+	fmt.Println("BadHttp test on port", port)
+	go ListenHttp(port, alloc)
+	// Verb that's not handled
+	resp, err := genHttp("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	wt.AssertNoErr(t, err)
+	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
+	// Mis-spelled URL
+	resp, err = genHttp("GET", fmt.Sprintf("http://localhost:%d/xip/%s/", port, containerID))
+	wt.AssertNoErr(t, err)
+	wt.AssertStatus(t, resp.StatusCode, http.StatusNotFound, "http response")
+	// Malformed URL
+	resp, err = genHttp("GET", fmt.Sprintf("http://localhost:%d/ip/%s/foo/bar/baz", port, containerID))
+	wt.AssertNoErr(t, err)
+	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 }
 
 func TestHttpCancel(t *testing.T) {
