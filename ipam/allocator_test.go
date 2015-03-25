@@ -5,12 +5,11 @@ import (
 	"github.com/zettio/weave/common"
 	"github.com/zettio/weave/router"
 	wt "github.com/zettio/weave/testing"
+	"math/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
-	"sync"
-	"math/rand"
-	"fmt"
 )
 
 const (
