@@ -1,6 +1,7 @@
 package ipam
 
 import (
+	"fmt"
 	"github.com/zettio/weave/common"
 	"github.com/zettio/weave/router"
 	wt "github.com/zettio/weave/testing"
@@ -28,6 +29,7 @@ func TestAllocFree(t *testing.T) {
 	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
 	defer alloc.Stop()
 
+	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
 	addr1 := alloc.GetFor(container1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
@@ -52,7 +54,6 @@ func TestAllocFree(t *testing.T) {
 }
 
 func TestElection(t *testing.T) {
-	common.InitDefaultLogging(true)
 	const (
 		donateSize     = 5
 		donateStart    = "10.0.1.7"
@@ -111,10 +112,10 @@ func TestElection(t *testing.T) {
 	ExpectMessage(alloc1, peerNameString, msgSpaceRequest, nil)
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 
-	//
-	alloc2.donateSpace(alloc1.ourName)
+	// alloc2 receives the space request
+	ExpectBroadcastMessage(alloc2, nil)
+	alloc2.OnGossipUnicast(alloc1.ourName, router.Concat([]byte{msgSpaceRequest}, alloc1.EncodeState()))
 
-	ExpectBroadcastMessage(alloc2, alloc2.EncodeState())
 	// Now alloc1 receives the space donation
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 	AssertSent(t, done)
@@ -125,7 +126,7 @@ func TestElection(t *testing.T) {
 func TestCancel(t *testing.T) {
 	//common.InitDefaultLogging(true)
 	const (
-		CIDR = "10.0.1.7/22"
+		CIDR = "10.0.1.7/26"
 	)
 	peer1Name, _ := router.PeerNameFromString("01:00:00:02:00:00")
 	peer2Name, _ := router.PeerNameFromString("02:00:00:02:00:00")
@@ -141,11 +142,10 @@ func TestCancel(t *testing.T) {
 	alloc1.Start()
 	alloc2.Start()
 
-	// This is needed to tell one another about each other
+	// tell peers about each other
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
-	time.Sleep(100 * time.Millisecond)
 
-	// Get some IPs
+	// Get some IPs, so each allocator has some space
 	res1 := alloc1.GetFor("foo", nil)
 	common.Debug.Printf("res1 = %s", res1)
 	res2 := alloc2.GetFor("bar", nil)
@@ -157,22 +157,27 @@ func TestCancel(t *testing.T) {
 	// Now we're going to stop alloc2 and ask alloc1
 	// for an allocation
 	alloc2.Stop()
+	time.Sleep(100 * time.Millisecond)
+
+	// Use up all the IPs that alloc1 owns, so the allocation after this will prompt a request to alloc2
+	for i := 0; alloc1.spaceSet.NumFreeAddresses() > 0; i++ {
+		alloc1.GetFor(fmt.Sprintf("tmp%d", i), nil)
+	}
 
 	cancelChan := make(chan bool, 1)
 	doneChan := make(chan bool)
 	go func() {
-		// Fixme: need to ensure this goes to alloc2
 		ip := alloc1.GetFor("baz", cancelChan)
 		doneChan <- (ip == nil)
 	}()
 
 	AssertNothingSent(t, doneChan)
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	AssertNothingSent(t, doneChan)
 	cancelChan <- true
 	flag := <-doneChan
-	if flag {
-		wt.Fatalf(t, "Error: got nil result from GetFor")
+	if !flag {
+		wt.Fatalf(t, "Error: got non-nil result from GetFor")
 	}
 }
 
@@ -197,7 +202,7 @@ func (alloc *Allocator) AmendSpace(newSize int) {
 func TestFakeRouterSimple(t *testing.T) {
 	common.InitDefaultLogging(true)
 	const (
-		cidr         = "10.0.1.7/22"
+		cidr = "10.0.1.7/22"
 	)
 	allocs, _ := makeNetworkOfAllocators(2, cidr)
 
