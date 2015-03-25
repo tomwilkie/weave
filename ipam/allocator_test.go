@@ -20,11 +20,12 @@ func TestAllocFree(t *testing.T) {
 		container1 = "abcdef"
 		container2 = "baddf00d"
 		container3 = "b01df00d"
-		testAddr1  = "10.0.3.4"
+		universe   = "10.0.3.0/30"
+		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
 		spaceSize  = 4
 	)
 
-	alloc := testAllocator(t, "01:00:00:01:00:00", testAddr1+"/30")
+	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
 	defer alloc.Stop()
 
 	addr1 := alloc.GetFor(container1, nil)
@@ -185,17 +186,6 @@ func (alloc *Allocator) AssertNothingPending(t *testing.T) {
 
 func (alloc *Allocator) EncodeState() []byte {
 	return alloc.ring.GossipState()
-}
-
-func (alloc *Allocator) EncodeClaimMsg(start string, size uint32) []byte {
-	// tbd
-	//claim := []Space{NewMinSpace(net.ParseIP(donateStart), donateSize)}
-	//return router.Concat(GobEncode(NewMinSpace(addr1, 1)), encode(alloc1.ourSpaceSet))
-	return nil
-}
-
-func (alloc *Allocator) decodeUpdate([]byte) {
-	// tbd
 }
 
 func (alloc *Allocator) AmendSpace(newSize int) {
