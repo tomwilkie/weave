@@ -1,5 +1,5 @@
 /*
-Ring implements a simple ring CRDT.
+Package ring implements a simple ring CRDT.
 
 TODO: merge consequtively owned ranges
 TODO: implement tombstones
@@ -18,7 +18,7 @@ import (
 	"sort"
 )
 
-// Represents entries around the ring
+// Entry represents entries around the ring
 type entry struct {
 	Token     uint32          // The start of this range
 	Peer      router.PeerName // Who owns this range
@@ -52,7 +52,7 @@ func (es entries) String() string {
 	return buffer.String()
 }
 
-// Represents the ring itself
+// Ring represents the ring itself
 type Ring struct {
 	Start, End uint32          // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
@@ -179,12 +179,13 @@ func (r *Ring) between(token uint32, i, j int) bool {
 func (r *Ring) distance(start, end uint32) uint32 {
 	if end > start {
 		return end - start
-	} else {
-		return (r.End - start) + (end - r.Start)
 	}
+
+	return (r.End - start) + (end - r.Start)
 }
 
-// Grant range [start, end) to peer
+// GrantRangeToHost modifies the ring such that range [start, end)
+// is assigned to peer.  This may insert upto two new tokens.
 // Note, due to wrapping, end can be less than start
 // TODO grant should calulate free correctly
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
@@ -250,12 +251,13 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	if nextEntry.Token == end {
 		// That was easy
 		return
-	} else {
-		utils.Assert(r.between(end, i, k), "End spans another token")
-		distance := r.distance(end, r.entry(k).Token)
-		r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: distance})
-		r.assertInvariants()
 	}
+
+	// Case ii (case iii should never happen)
+	utils.Assert(r.between(end, i, k), "End spans another token")
+	distance := r.distance(end, r.entry(k).Token)
+	r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: distance})
+	r.assertInvariants()
 }
 
 // Merge the given ring into this ring.
@@ -333,7 +335,8 @@ func (r *Ring) merge(gossip Ring) error {
 	return nil
 }
 
-func (r *Ring) OnGossipBroadcast(msg []byte) error {
+// UpdateRing updates the ring with the state in msg
+func (r *Ring) UpdateRing(msg []byte) error {
 	reader := bytes.NewReader(msg)
 	decoder := gob.NewDecoder(reader)
 	gossipedRing := Ring{}
@@ -348,6 +351,7 @@ func (r *Ring) OnGossipBroadcast(msg []byte) error {
 	return nil
 }
 
+// GossipState returns the encoded state of the ring
 func (r *Ring) GossipState() []byte {
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
@@ -357,22 +361,21 @@ func (r *Ring) GossipState() []byte {
 	return buf.Bytes()
 }
 
+// Empty returns true if the ring has no entries
 func (r *Ring) Empty() bool {
 	return len(r.Entries) == 0
 }
 
-// Return type for OwnedRanges.
-// NB End can be less than Start for ranges
-// which cross 0.
+// Range is the return type for OwnedRanges.
+// NB will never have End < Start
 type Range struct {
 	Start, End net.IP // [Start, End) of range I own
 }
 
-type RangeSlice []Range
-
-// Return slice of Ranges indicating which
-// ranges are owned by this peer.
-func (r *Ring) OwnedRanges() RangeSlice {
+// OwnedRanges returns slice of Ranges indicating which
+// ranges are owned by this peer.  Will split ranges which
+// span 0 in the ring.
+func (r *Ring) OwnedRanges() []Range {
 	// Cannot return more the entries + 1 results
 	// +1 for splitting results spanning 0
 	result := make([]Range, len(r.Entries)+1)
@@ -417,7 +420,7 @@ func (r *Ring) OwnedRanges() RangeSlice {
 	return result[:j]
 }
 
-// Claim entire ring.  Only works for empty rings.
+// ClaimItAll claims the entire ring for this peer.  Only works for empty rings.
 func (r *Ring) ClaimItAll() {
 	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
@@ -440,6 +443,9 @@ func (r *Ring) String() string {
 	return buffer.String()
 }
 
+// ReportFree is used by the allocator to tell the ring
+// how many free ips are in a given ring, so that ChoosePeerToAskForSpace
+// can make more intelligent decisions.
 func (r *Ring) ReportFree(startIP net.IP, free uint32) {
 	start := utils.Ip4int(startIP)
 
@@ -464,9 +470,11 @@ func (r *Ring) ReportFree(startIP net.IP, free uint32) {
 	r.Entries[i].Version++
 }
 
+// ChoosePeerToAskForSpace chooses a weightes-random peer to ask
+// for space.
 func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 	// Compute total free space per peer
-	var sum uint32 = 0
+	var sum uint32
 	totalSpacePerPeer := make(map[router.PeerName]uint32)
 	for _, entry := range r.Entries {
 		// Ignore ranges with no free space

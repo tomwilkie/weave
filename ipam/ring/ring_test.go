@@ -312,7 +312,7 @@ func TestGossip(t *testing.T) {
 	assertRing(ring2, []*entry{})
 
 	// Check the merge sends it to the other ring
-	wt.AssertSuccess(t, ring2.OnGossipBroadcast(ring1.GossipState()))
+	wt.AssertSuccess(t, ring2.UpdateRing(ring1.GossipState()))
 	assertRing(ring1, []*entry{{Token: startPlus, Peer: peer1name, Free: 253},
 		{Token: endMinus, Peer: router.UnknownPeerName}})
 	assertRing(ring2, []*entry{{Token: startPlus, Peer: peer1name, Free: 253},
@@ -396,7 +396,7 @@ func (r1 Range) Equal(r2 Range) bool {
 	return r1.Start.Equal(r2.Start) && r1.End.Equal(r2.End)
 }
 
-func (rs1 RangeSlice) Equal(rs2 []Range) bool {
+func RangesEqual(rs1 []Range, rs2 []Range) bool {
 	if len(rs1) != len(rs2) {
 		return false
 	}
@@ -414,19 +414,19 @@ func TestOwnedRange(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
 
-	wt.AssertTrue(t, ring1.OwnedRanges().Equal(
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(),
 		[]Range{{Start: ipStartPlus, End: ipEndMinus}}), "invalid")
 
 	ring1.GrantRangeToHost(ipMiddle, ipEndMinus, peer2name)
-	wt.AssertTrue(t, ring1.OwnedRanges().Equal(
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(),
 		[]Range{{Start: ipStartPlus, End: ipMiddle}}), "invalid")
 
 	ring2 := New(ipStart, ipEnd, peer2name)
 	ring2.merge(*ring1)
-	wt.AssertTrue(t, ring2.OwnedRanges().Equal(
+	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
 		[]Range{{Start: ipMiddle, End: ipEndMinus}}), "invalid")
 
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}}
-	wt.AssertTrue(t, ring2.OwnedRanges().Equal(
+	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
 		[]Range{{Start: ipStart, End: ipMiddle}, {Start: ipMiddle, End: ipEnd}}), "invalid")
 }
