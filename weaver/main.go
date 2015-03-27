@@ -123,29 +123,43 @@ func main() {
 		log.Println("Communication between peers is encrypted.")
 	}
 
-	var logFrame func(string, []byte, *layers.Ethernet)
-	if pktdebug {
-		logFrame = func(prefix string, frame []byte, eth *layers.Ethernet) {
-			h := fmt.Sprintf("%x", sha256.Sum256(frame))
-			if eth == nil {
-				log.Println(prefix, len(frame), "bytes (", h, ")")
-			} else {
-				log.Println(prefix, len(frame), "bytes (", h, "):", eth.SrcMAC, "->", eth.DstMAC)
-			}
-		}
-	} else {
-		logFrame = func(prefix string, frame []byte, eth *layers.Ethernet) {}
-	}
-
 	if prof != "" {
 		p := *profile.CPUProfile
 		p.ProfilePath = prof
 		defer profile.Start(&p).Stop()
 	}
 
-	router := weave.NewRouter(iface, ourName, nickName, pwSlice, connLimit, bufSz*1024*1024, logFrame)
+	router := weave.NewRouter(iface, ourName, nickName, pwSlice, connLimit, bufSz*1024*1024, logFrameFunc(pktdebug))
 	log.Println("Our name is", router.Ourself.Name, "("+router.Ourself.NickName+")")
 	router.Start()
+	initiateConnections(router, peers)
+	var allocator *ipam.Allocator = nil
+	// hack for testing
+	if allocCIDR == "" {
+		allocCIDR = "10.0.1.0/24"
+	}
+	if allocCIDR != "" {
+		allocator = createAllocator(router, apiPath, allocCIDR)
+	}
+	go handleHttp(router, allocator)
+	handleSignals(router)
+}
+
+func logFrameFunc(debug bool) func(string, []byte, *layers.Ethernet) {
+	if !debug {
+		return func(prefix string, frame []byte, eth *layers.Ethernet) {}
+	}
+	return func(prefix string, frame []byte, eth *layers.Ethernet) {
+		h := fmt.Sprintf("%x", sha256.Sum256(frame))
+		if eth == nil {
+			log.Println(prefix, len(frame), "bytes (", h, ")")
+		} else {
+			log.Println(prefix, len(frame), "bytes (", h, "):", eth.SrcMAC, "->", eth.DstMAC)
+		}
+	}
+}
+
+func initiateConnections(router *weave.Router, peers []string) {
 	for _, peer := range peers {
 		if addr, err := net.ResolveTCPAddr("tcp4", weave.NormalisePeerAddr(peer)); err == nil {
 			router.ConnectionMaker.InitiateConnection(addr.String())
@@ -153,26 +167,21 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-	var allocator *ipam.Allocator = nil
-	// hack for testing
-	if allocCIDR == "" {
-		allocCIDR = "10.0.1.0/24"
+}
+
+func createAllocator(router *weave.Router, apiPath string, allocCIDR string) *ipam.Allocator {
+	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, allocCIDR)
+	if err != nil {
+		log.Fatal(err)
 	}
-	if allocCIDR != "" {
-		allocator, err = ipam.NewAllocator(ourName, allocCIDR)
-		if err != nil {
-			log.Fatal(err)
-		}
-		allocator.SetGossip(router.NewGossip("IPallocation", allocator))
-		allocator.Start()
-		allocator.HandleHTTP(http.DefaultServeMux)
-		err := lg.StartUpdater(apiPath, allocator)
-		if err != nil {
-			lg.Error.Fatal("Unable to start watcher", err)
-		}
+	allocator.SetGossip(router.NewGossip("IPallocation", allocator))
+	allocator.Start()
+	allocator.HandleHTTP(http.DefaultServeMux)
+	err = lg.StartUpdater(apiPath, allocator)
+	if err != nil {
+		lg.Error.Fatal("Unable to start watcher", err)
 	}
-	go handleHttp(router, allocator)
-	handleSignals(router)
+	return allocator
 }
 
 func handleHttp(router *weave.Router, others ...interface{}) {
@@ -206,9 +215,18 @@ func handleHttp(router *weave.Router, others ...interface{}) {
 		}
 	})
 
+	muxRouter.Methods("POST").Path("/forget").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peer := r.FormValue("peer")
+		if addr, err := net.ResolveTCPAddr("tcp4", weave.NormalisePeerAddr(peer)); err == nil {
+			router.ConnectionMaker.ForgetConnection(addr.String())
+		} else {
+			http.Error(w, fmt.Sprint("invalid peer address: ", err), http.StatusBadRequest)
+		}
+	})
+
 	http.Handle("/", muxRouter)
 
-	address := fmt.Sprintf(":%d", weave.HttpPort)
+	address := fmt.Sprintf(":%d", weave.HTTPPort)
 	err := http.ListenAndServe(address, nil)
 	if err != nil {
 		log.Fatal("Unable to create http listener: ", err)

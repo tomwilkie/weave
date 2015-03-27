@@ -107,7 +107,7 @@ func (peers *Peers) Names() PeerNameSet {
 func (peers *Peers) EncodePeers(names PeerNameSet) []byte {
 	peers.RLock()
 	peerList := make([]*Peer, 0, len(names))
-	for name, _ := range names {
+	for name := range names {
 		if peer, found := peers.table[name]; found {
 			peerList = append(peerList, peer)
 		}
@@ -144,12 +144,11 @@ func (peers *Peers) String() string {
 
 func (peers *Peers) fetchAlias(peer *Peer) (*Peer, bool) {
 	if existingPeer, found := peers.table[peer.Name]; found {
-		if existingPeer.UID == peer.UID {
-			existingPeer.IncrementLocalRefCount()
-			return existingPeer, true
-		} else {
+		if existingPeer.UID != peer.UID {
 			return nil, true
 		}
+		existingPeer.IncrementLocalRefCount()
+		return existingPeer, true
 	}
 	return nil, false
 }
@@ -169,7 +168,7 @@ func (peers *Peers) garbageCollect() []*Peer {
 
 func setFromPeersMap(peers map[PeerName]*Peer) PeerNameSet {
 	names := make(PeerNameSet)
-	for name, _ := range peers {
+	for name := range peers {
 		names[name] = true
 	}
 	return names
