@@ -55,23 +55,21 @@ func (s *MDNSServer) Start(ifi *net.Interface, localDomain string) error {
 		func(zone Lookup, r *dns.Msg, q *dns.Question) *dns.Msg {
 			if ip, err := zone.LookupName(q.Name); err == nil {
 				return makeAddressReply(r, q, []net.IP{ip})
-			} else {
-				return nil
 			}
+			return nil
 		})
 
 	handleReverse := s.makeHandler(dns.TypePTR,
 		func(zone Lookup, r *dns.Msg, q *dns.Question) *dns.Msg {
 			if name, err := zone.LookupInaddr(q.Name); err == nil {
 				return makePTRReply(r, q, []string{name})
-			} else {
-				return nil
 			}
+			return nil
 		})
 
 	mux := dns.NewServeMux()
 	mux.HandleFunc(localDomain, handleLocal)
-	mux.HandleFunc(RDNS_DOMAIN, handleReverse)
+	mux.HandleFunc(RDNSDomain, handleReverse)
 
 	s.srv = &dns.Server{
 		Listener:   nil,
@@ -104,7 +102,7 @@ func (s *MDNSServer) makeHandler(qtype uint16, lookup LookupFunc) dns.HandlerFun
 					Debug.Printf("[mdns msgid %d] Found local answer to mDNS query %s",
 						r.MsgHdr.Id, q.Name)
 					if err := s.sendResponse(m); err != nil {
-						Warning.Printf("[mdns msgid %d] Error writing to %s",
+						Warning.Printf("[mdns msgid %d] Error writing to %v",
 							r.MsgHdr.Id, s.sendconn)
 					}
 				} else {

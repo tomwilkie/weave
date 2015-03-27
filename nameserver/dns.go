@@ -8,8 +8,8 @@ import (
 const (
 	localTTL    uint32 = 30 // somewhat arbitrary; we don't expect anyone downstream to cache results
 	negLocalTTL        = 30 // TTL for negative local resolutions
-	minUdpSize         = 512
-	maxUdpSize         = 65535
+	minUDPSize         = 512
+	maxUDPSize         = 65535
 )
 
 func makeHeader(r *dns.Msg, q *dns.Question) *dns.RR_Header {
@@ -42,12 +42,12 @@ func makeAddressReply(r *dns.Msg, q *dns.Question, addrs []net.IP) *dns.Msg {
 		switch q.Qtype {
 		case dns.TypeA:
 			if ip4 := addr.To4(); ip4 != nil {
-				answers[count] = &dns.A{*header, addr}
+				answers[count] = &dns.A{Hdr: *header, A: addr}
 				count++
 			}
 		case dns.TypeAAAA:
 			if ip4 := addr.To4(); ip4 == nil {
-				answers[count] = &dns.AAAA{*header, addr}
+				answers[count] = &dns.AAAA{Hdr: *header, AAAA: addr}
 				count++
 			}
 		}
@@ -59,7 +59,7 @@ func makePTRReply(r *dns.Msg, q *dns.Question, names []string) *dns.Msg {
 	answers := make([]dns.RR, len(names))
 	header := makeHeader(r, q)
 	for i, name := range names {
-		answers[i] = &dns.PTR{*header, name}
+		answers[i] = &dns.PTR{Hdr: *header, Ptr: name}
 	}
 	return makeReply(r, answers)
 }
@@ -82,9 +82,9 @@ func makeDNSNotImplResponse(r *dns.Msg) *dns.Msg {
 
 // get the maximum UDP-reply length
 func getMaxReplyLen(r *dns.Msg, proto dnsProtocol) int {
-	maxLen := minUdpSize
-	if proto == protTcp {
-		maxLen = maxUdpSize
+	maxLen := minUDPSize
+	if proto == protTCP {
+		maxLen = maxUDPSize
 	} else if opt := r.IsEdns0(); opt != nil {
 		maxLen = int(opt.UDPSize())
 	}
