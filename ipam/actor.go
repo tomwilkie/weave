@@ -149,6 +149,15 @@ func (alloc *Allocator) TombstonePeer(peer router.PeerName) error {
 	return <-resultChan
 }
 
+// ListPeers (Sync) - returns list of peer names known to the ring
+func (alloc *Allocator) ListPeers() []router.PeerName {
+	resultChan := make(chan []router.PeerName)
+	alloc.actionChan <- func() {
+		resultChan <- alloc.listPeers()
+	}
+	return <-resultChan
+}
+
 // ACTOR server
 
 func (alloc *Allocator) actorLoop(actionChan <-chan func(), withTimers bool) {
