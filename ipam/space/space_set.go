@@ -62,6 +62,10 @@ func (s *Set) AddSpace(newspace Space) {
 	s.spaces[i] = &newspace               // put in new element
 }
 
+func (s *Set) Clear() {
+	s.spaces = s.spaces[:0]
+}
+
 // Exists returns true if space described by (start, size) exists
 // in this set.
 func (s *Set) Exists(start net.IP, size uint32) bool {

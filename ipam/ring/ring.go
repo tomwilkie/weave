@@ -522,7 +522,6 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 
 // TombstonePeer will mark all entries associated with this peer as tombstones
 func (r *Ring) TombstonePeer(peer router.PeerName, dt int64) {
-	utils.Assert(peer != r.Peername, "Cannot tombstone yourself")
 	utils.Assert(dt > 0, "dt must be greater than 0!")
 
 	absTimeout := time.Now().Unix() + dt
