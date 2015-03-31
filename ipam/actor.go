@@ -22,6 +22,7 @@ func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 	alloc.actionChan <- func() {
 		if alloc.shuttingDown {
 			resultChan <- nil
+			return
 		}
 		alloc.electLeaderIfNecessary()
 		if addrs, found := alloc.owned[ident]; found && len(addrs) > 0 {
@@ -156,6 +157,28 @@ func (alloc *Allocator) ListPeers() []router.PeerName {
 		resultChan <- alloc.listPeers()
 	}
 	return <-resultChan
+}
+
+// Claim an address that we think we should own (Sync)
+func (alloc *Allocator) Claim(ident string, addr net.IP, cancelChan <-chan bool) error {
+	resultChan := make(chan error, 1)
+	alloc.actionChan <- func() {
+		if alloc.shuttingDown {
+			resultChan <- fmt.Errorf("Claim %s: allocator is shutting down", addr)
+			return
+		}
+		alloc.electLeaderIfNecessary()
+		alloc.handleClaim(ident, addr, resultChan)
+	}
+	select {
+	case result := <-resultChan:
+		return result
+	case <-cancelChan:
+		alloc.actionChan <- func() {
+			alloc.handleCancelClaim(ident, addr)
+		}
+		return nil
+	}
 }
 
 // ACTOR server
