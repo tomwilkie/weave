@@ -7,15 +7,23 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"expvar"
 	"fmt"
 	"math/rand"
 	"net"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
+)
+
+var (
+	expRingSize       = expvar.NewMap("ipam.ringSize")
+	expRingEntries    = expvar.NewMap("ipam.ringEntries")
+	expRingTombstones = expvar.NewMap("ipam.ringTombstones")
 )
 
 // Ring represents the ring itself
@@ -94,12 +102,33 @@ func (r *Ring) checkInvariants() error {
 	return nil
 }
 
+type _int int
+
+func (i _int) String() string {
+	return strconv.Itoa(int(i))
+}
+
+type _uint32 uint32
+
+func (i _uint32) String() string {
+	return strconv.FormatUint(uint64(i), 10)
+}
+
+func (r *Ring) updateExportedVariables() {
+	ringName := utils.IntIP4(r.Start).String()
+	expRingSize.Set(ringName, _uint32(r.End-r.Start))
+	expRingEntries.Set(ringName, _int(len(r.Entries)))
+	expRingTombstones.Set(ringName, _int(len(r.Entries)-len(r.Entries.filteredEntries())))
+}
+
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
 	utils.Assert(start <= end, "Start needs to be less than end!")
 
-	return &Ring{start, end, peer, make([]*entry, 0)}
+	ring := &Ring{start, end, peer, make([]*entry, 0)}
+	ring.updateExportedVariables()
+	return ring
 }
 
 // Returns the distance between two tokens on this ring, dealing
@@ -124,6 +153,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	r.assertInvariants()
 	defer r.assertInvariants()
+	defer r.updateExportedVariables()
 
 	// ----------------- Start of Checks -----------------
 
@@ -249,6 +279,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 func (r *Ring) merge(gossip Ring) error {
 	r.assertInvariants()
 	defer r.assertInvariants()
+	defer r.updateExportedVariables()
 
 	// Don't panic when checking the gossiped in ring.
 	// In this case just return any error found.
@@ -426,6 +457,8 @@ func (r *Ring) OwnedRanges() []Range {
 // ClaimItAll claims the entire ring for this peer.  Only works for empty rings.
 func (r *Ring) ClaimItAll() {
 	utils.Assert(r.Empty(), "Cannot bootstrap ring with entries in it!")
+	defer r.assertInvariants()
+	defer r.updateExportedVariables()
 
 	if e, found := r.Entries.get(r.Start); found {
 		e.Peer = r.Peername
@@ -436,8 +469,6 @@ func (r *Ring) ClaimItAll() {
 		r.Entries.insert(entry{Token: r.Start, Peer: r.Peername,
 			Free: r.distance(r.Start, r.End)})
 	}
-
-	r.assertInvariants()
 }
 
 func (r *Ring) String() string {
@@ -524,6 +555,7 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
 	r.assertInvariants()
 	defer r.assertInvariants()
+	defer r.updateExportedVariables()
 
 	if dt <= 0 {
 		return ErrInvalidTimeout
@@ -545,6 +577,7 @@ func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
 func (r *Ring) ExpireTombstones(now int64) {
 	r.assertInvariants()
 	defer r.assertInvariants()
+	defer r.updateExportedVariables()
 
 	i := 0
 	for i < len(r.Entries) {
