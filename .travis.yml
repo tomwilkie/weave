@@ -1,21 +1,35 @@
 language: go
 sudo: false
+
 go:
   - 1.4
+
+env:
+  - CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 addons:
   apt:
     packages:
     - libpcap-dev
 
-install: 
+before_install:
+  - openssl aes-256-cbc -K $encrypted_ca5f18a8f1be_key -iv $encrypted_ca5f18a8f1be_iv -in test/gce/keys.tar.enc -out test/gce/keys.tar -d
+  - tar xvf test/gce/keys.tar
+
+install:
+  - curl https://sdk.cloud.google.com | bash
+  - source ~/google-cloud-sdk/path.bash.inc
   - go clean -i net
   - go install -tags netgo std
-  - make travis
 
 script:
+  - make travis
   - make tests
+  - if [ "$TRAVIS_REPO_SLUG" = "tomwilkie/weave" ]; then test/gce/gce.sh setup; fi
 
 after_success:
   - go get github.com/mattn/goveralls
   - $HOME/gopath/bin/goveralls -coverprofile=profile.cov -service=travis-ci
+
+after_script:
+  - if [ "$TRAVIS_REPO_SLUG" = "tomwilkie/weave" ]; then test/gce/gce.sh destroy; fi
