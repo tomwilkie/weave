@@ -68,7 +68,9 @@ func (es *entries) remove(i int) {
 
 // Is token between entries at i and j?
 // NB i and j can overflow and will wrap
-// NBB if entries[i].token == token, this will return true
+// NBB this function does not work very well if there is only one
+//     token on the ring; luckily an accurate answer is not needed
+//     by the call sites in this case.
 func (es entries) between(token uint32, i, j int) bool {
 	utils.Assert(i < j, "Start and end must be in order")
 
