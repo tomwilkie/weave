@@ -600,7 +600,6 @@ func (r *Ring) Contains(addr net.IP) bool {
 // Owner returns the peername which owns the range containing addr
 func (r *Ring) Owner(addr net.IP) router.PeerName {
 	r.assertInvariants()
-	defer r.assertInvariants()
 
 	token := utils.IP4int(addr)
 	entries := r.Entries.filteredEntries()
