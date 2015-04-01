@@ -124,7 +124,7 @@ func (r *Ring) updateExportedVariables() {
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
-	utils.Assert(start <= end, "Start needs to be less than end!")
+	utils.Assert(start < end, "Start needs to be less than end!")
 
 	ring := &Ring{start, end, peer, make([]*entry, 0)}
 	ring.updateExportedVariables()
@@ -591,11 +591,13 @@ func (r *Ring) ExpireTombstones(now int64) {
 	}
 }
 
+// Contains returns true if addr is in this ring
 func (r *Ring) Contains(addr net.IP) bool {
 	pos := utils.IP4int(addr)
 	return pos >= r.Start && pos < r.End
 }
 
+// Owner returns the peername which owns the range containing addr
 func (r *Ring) Owner(addr net.IP) router.PeerName {
 	r.assertInvariants()
 	defer r.assertInvariants()
