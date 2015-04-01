@@ -599,15 +599,21 @@ func (r *Ring) Contains(addr net.IP) bool {
 
 // Owner returns the peername which owns the range containing addr
 func (r *Ring) Owner(addr net.IP) router.PeerName {
-	r.assertInvariants()
-
 	token := utils.IP4int(addr)
-	entries := r.Entries.filteredEntries()
-	for i, entry := range entries {
-		if entries.between(token, i, i+1) {
-			return entry.Peer
-		}
+	utils.Assert(r.Start <= token && token < r.End, "Token out of range")
+
+	r.assertInvariants()
+	// There can be no owners on an empty ring
+	filteredEntries := r.Entries.filteredEntries()
+	if len(filteredEntries) == 0 {
+		return router.UnknownPeerName
 	}
 
-	return router.UnknownPeerName
+	// Look for the right-most entry, less than or equal to token
+	preceedingEntry := sort.Search(len(filteredEntries), func(j int) bool {
+		return filteredEntries[j].Token > token
+	})
+	preceedingEntry--
+	entry := filteredEntries.entry(preceedingEntry)
+	return entry.Peer
 }

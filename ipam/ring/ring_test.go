@@ -511,6 +511,22 @@ func TestTombstoneDelete(t *testing.T) {
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Version: 1, Free: 128}})
 }
 
+func TestOwner(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	wt.AssertTrue(t, ring1.Contains(ipStart), "start should be in ring")
+	wt.AssertFalse(t, ring1.Contains(ipEnd), "end should not be in ring")
+
+	wt.AssertEquals(t, ring1.Owner(ipStart), router.UnknownPeerName)
+
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
+	wt.AssertEquals(t, ring1.Owner(ipStart), peer1name)
+	wt.AssertEquals(t, ring1.Owner(ipMiddle), peer2name)
+	wt.AssertPanic(t, func() {
+		ring1.Owner(ipEnd)
+	})
+}
+
 type uint32slice []uint32
 
 func (s uint32slice) Len() int           { return len(s) }
