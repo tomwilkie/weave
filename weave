@@ -19,15 +19,15 @@ PROCFS=${PROCFS:-/proc}
 usage() {
     echo "Usage:"
     echo "weave setup"
-    echo "weave launch     [-password <password>] [-nickname <nickname>] <peer> ..."
+    echo "weave launch     [-password <password>] [-nickname <nickname>] [-iprange <cidr>] <peer> ..."
     echo "weave launch-dns <cidr>"
     echo "weave connect    <peer>"
     echo "weave forget     <peer>"
-    echo "weave run        [--with-dns] <cidr> [<cidr> ...] <docker run args> ..."
-    echo "weave start      <cidr> [<cidr> ...] <container_id>"
-    echo "weave attach     <cidr> [<cidr> ...] <container_id>"
+    echo "weave run        [--with-dns] [<cidr> ...] <docker run args> ..."
+    echo "weave start      [<cidr> ...] <container_id>"
+    echo "weave attach     [<cidr> ...] <container_id>"
     echo "weave detach     <cidr> [<cidr> ...] <container_id>"
-    echo "weave expose     <cidr> [<cidr> ...] [-h <hostname>]"
+    echo "weave expose     [<cidr> ...] [-h <hostname>]"
     echo "weave hide       <cidr> [<cidr> ...]"
     echo "weave ps         [<container_id> ...]"
     echo "weave status"
@@ -35,9 +35,11 @@ usage() {
     echo "weave stop"
     echo "weave stop-dns"
     echo "weave reset"
+    echo "weave rmpeer     <peerid>"
     echo
     echo "where <peer> is of the form <ip_address_or_fqdn>[:<port>], and"
     echo "      <cidr> is of the form <ip_address>/<routing_prefix_length>"
+    echo "      <peerid> is a nickname or weave internal peer ID"
     exit 1
 }
 
@@ -90,9 +92,6 @@ collect_cidr_args() {
         CIDR_COUNT=$((CIDR_COUNT + 1))
         shift 1
     done
-    if [ $CIDR_COUNT -eq 0 ]; then
-        [ $# -gt 0 ] && validate_cidr "$1" || usage
-    fi
 }
 
 # "run" is a special case because we want to use docker directly,
@@ -242,6 +241,17 @@ create_bridge() {
     # Configure the ARP cache parameters on the bridge interface for
     # the sake of 'weave expose'
     configure_arp_cache $BRIDGE
+}
+
+expose() {
+    CIDR="$1"
+    if ! ip addr show dev $BRIDGE | grep -qF $CIDR
+    then
+        ip addr add dev $BRIDGE $CIDR
+        arp_update $BRIDGE $CIDR
+        add_iptables_rule nat WEAVE -o $BRIDGE ! -s $CIDR -j MASQUERADE
+        add_iptables_rule nat WEAVE -s $CIDR ! -o $BRIDGE -j MASQUERADE
+    fi
 }
 
 destroy_bridge() {
@@ -571,6 +581,72 @@ populate_dns() {
 
 ##########################################################################################
 
+# Tell the newly-started weave IP allocator about existing weave IPs
+populate_ipam() {
+    wait_for_status $CONTAINER_NAME $HTTP_PORT
+    for CONTAINER in $(docker ps -q --no-trunc); do
+        if CONTAINER_ADDRS=$(with_container_netns $CONTAINER container_weave_addrs 2>&1) ; then
+            CONTAINER_IPS=$(echo "$CONTAINER_ADDRS" | grep -o 'inet .*' | sed -e 's/inet \([^/]*\)\/\(.*\)/\1/')
+            for IP in $CONTAINER_IPS; do
+                http_call_ip $TARGET_IP $HTTP_PORT PUT /ip/$CONTAINER/$IP
+            done
+        fi
+    done
+}
+
+# If we don't already have any CIDRs passed from the command-line, get one from IPAM
+get_ipam_cidr() {
+    if [ -z $CIDR_ARGS ] ; then
+        # get the long form of the container ID
+        if ! status=$(docker inspect --format='{{.State.Running}} {{.Id}}' $1 2>/dev/null); then
+            echo "Error: No such container: $1" >&2
+            return 1
+        fi
+        case "$status" in
+            true*)
+                CONTAINER="${status#true }"
+                ;;
+            *)
+                echo "$1 container is not running." >&2
+                return 1
+                ;;
+        esac
+        CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT POST /ip/$CONTAINER)"
+        if [ "$CIDR_ARGS" = "404 page not found" ] ; then
+            echo "No IP address supplied (use the -iprange option on 'weave launch'\nto enable IP allocation)" >&2
+            return 1
+        fi
+    fi
+}
+
+# Check that a container named $1 with image $2 is not running
+check_not_running() {
+    case $(docker inspect --format='{{.State.Running}} {{.Config.Image}}' $1 2>/dev/null) in
+        "true $2")
+            echo "$1 is already running." >&2
+            exit 1
+            ;;
+        "true $2:"*)
+            echo "$1 is already running." >&2
+            exit 1
+            ;;
+        "false $2")
+            docker rm $1 >/dev/null
+            ;;
+        "false $2:"*)
+            docker rm $1 >/dev/null
+            ;;
+        true*)
+            echo "Found another running container named '$1'. Aborting." >&2
+            exit 1
+            ;;
+        false*)
+            echo "Found another container named '$1'. Aborting." >&2
+            exit 1
+            ;;
+    esac
+}
+
 [ $(id -u) = 0 ] || {
     echo "weave must be run as 'root' when run locally" >&2
     exit 1
@@ -658,6 +734,12 @@ case "$COMMAND" in
                     CONTAINER_PORT="$2"
                     shift 2
                     ;;
+                -iprange)
+                    [ $# -gt 1 ] || usage
+                    validate_cidr $2
+                    IPRANGE="-iprange $2"
+                    shift 2
+                    ;;
                 *)
                     break
                     ;;
@@ -667,10 +749,10 @@ case "$COMMAND" in
         # additional parameters, such as resource limits, to docker
         # when launching the weave container.
         CONTAINER=$(docker run --privileged -d --name=$CONTAINER_NAME \
-            -p $PORT:$CONTAINER_PORT/tcp -p $PORT:$CONTAINER_PORT/udp -e WEAVE_PASSWORD \
-            $WEAVE_DOCKER_ARGS $IMAGE -iface $CONTAINER_IFNAME -port $CONTAINER_PORT -name $MACADDR -nickname "$NICKNAME" "$@")
+            -p $PORT:$CONTAINER_PORT/tcp -p $PORT:$CONTAINER_PORT/udp -e WEAVE_PASSWORD -v /var/run/docker.sock:/var/run/docker.sock \
+            $WEAVE_DOCKER_ARGS $IMAGE -iface $CONTAINER_IFNAME -port $CONTAINER_PORT -name $MACADDR -nickname "$NICKNAME" $IPRANGE "$@")
         with_container_netns $CONTAINER launch >/dev/null
-        wait_for_status $CONTAINER_NAME $HTTP_PORT
+        [ -z "$IPRANGE" ] && wait_for_status $CONTAINER_NAME $HTTP_PORT || populate_ipam
         echo $CONTAINER
         ;;
     test-launch)
@@ -777,6 +859,7 @@ case "$COMMAND" in
         CONTAINER_ID="$1"
         create_bridge
         CONTAINER=$(docker start $CONTAINER_ID)
+        get_ipam_cidr $CONTAINER
         with_container_netns $CONTAINER_ID attach $CIDR_ARGS >/dev/null
         tell_dns PUT $CONTAINER_ID $CIDR_ARGS
         echo $CONTAINER
@@ -787,6 +870,7 @@ case "$COMMAND" in
         [ $# -eq 1 ] || usage
         CONTAINER_ID="$1"
         create_bridge
+        get_ipam_cidr $CONTAINER_ID
         with_container_netns $CONTAINER_ID attach $CIDR_ARGS >/dev/null
         tell_dns PUT $CONTAINER_ID $CIDR_ARGS
         ;;
@@ -801,6 +885,7 @@ case "$COMMAND" in
     expose)
         collect_cidr_args "$@"
         shift $CIDR_COUNT
+        [ $CIDR_COUNT -gt 0 ] || { get_ipam_cidr weave && expose $CIDR_ARGS ; }
         if [ $# -eq 0 ]; then
             FQDN=""
         else
@@ -853,6 +938,7 @@ case "$COMMAND" in
         ;;
     reset)
         [ $# -eq 0 ] || usage
+        http_call $CONTAINER_NAME $HTTP_PORT POST /tombstone-self >/dev/null 2>&1 || true
         docker stop  $CONTAINER_NAME     >/dev/null 2>&1 || true
         docker stop  $DNS_CONTAINER_NAME >/dev/null 2>&1 || true
         docker rm -f $CONTAINER_NAME     >/dev/null 2>&1 || true
@@ -862,6 +948,11 @@ case "$COMMAND" in
         for LOCAL_IFNAME in $(ip link show | grep v${CONTAINER_IFNAME}pl | cut -d ' ' -f 2 | tr -d ':') ; do
             ip link del $LOCAL_IFNAME
         done
+        ;;
+    rmpeer)
+        [ $# -eq 1 ] || usage
+        PEER=$1
+        http_call $CONTAINER_NAME $HTTP_PORT DELETE /peer/$PEER
         ;;
     *)
         echo "Unknown weave command '$COMMAND'" >&2
