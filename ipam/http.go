@@ -13,7 +13,7 @@ import (
 /*
 The operations supported by this interface are:
 
-  * GET /ip/<containerid> - return a CIDR-format address for the
+  * POST /ip/<containerid> - return a CIDR-format address for the
     container with ID <containerid>.  This ID should be the full
     long-format hex number ID that Docker has given it.  If you call
     this multiple times for the same container it will always return
@@ -23,10 +23,8 @@ The operations supported by this interface are:
   * PUT /ip/<containerid>/<ip> - state that address <ip> is associated
     with <containerid>.  If you send an address outside of the space
     managed by IPAM then this request is ignored.
-  * DELETE /ip/<containerid>/<ip> - state that address <ip> is no
-    longer associated with <containerid>
-  * DELETE /ip/<containerid>/* - equivalent to calling DELETE for all
-    ip addresses associated with <containerid>
+  * DELETE /ip/<containerid> - free all ip addresses associated with
+    <containerid>
 
 */
 
@@ -81,7 +79,7 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 			} else {
 				badRequest(w, fmt.Errorf("Allocator shutting down"))
 			}
-		case "DELETE": // opposite of PUT for one specific address or all addresses
+		case "DELETE": // one container has gone away
 			ident, err := parseURL(r.URL.Path)
 			if err != nil {
 				badRequest(w, err)
