@@ -59,17 +59,12 @@ func (space *Space) Allocate() net.IP {
 	return utils.Add(space.Start, offset)
 }
 
-func (space *Space) addrInRange(addr net.IP) bool {
-	offset := utils.Subtract(addr, space.Start)
-	return offset >= 0 && offset < int64(space.Size)
-}
-
 // Free takes an IP in this space and record it as avalible.
 func (space *Space) Free(addr net.IP) error {
 	space.assertInvariants()
 	defer space.assertInvariants()
 
-	if !space.addrInRange(addr) {
+	if !space.contains(addr) {
 		return fmt.Errorf("Free out of range: %s", addr)
 	}
 
