@@ -50,7 +50,7 @@ func TestGiveUpSimple(t *testing.T) {
 	// Empty space set should split in two and give me the second half
 	start, numGivenUp, ok := ps1.GiveUpSpace()
 	wt.AssertBool(t, ok, true, "GiveUpSpace result")
-	wt.AssertTrue(t, start.Equal(net.ParseIP("10.0.1.24")), "Invalid start")
+	wt.AssertEqualString(t, start.String(), "10.0.1.24", "Invalid start")
 	wt.AssertEqualUint32(t, numGivenUp, 24, "GiveUpSpace 1 size")
 	wt.AssertEqualUint32(t, ps1.NumFreeAddresses(), 24, "num free addresses")
 
@@ -92,12 +92,12 @@ func TestGiveUpHard(t *testing.T) {
 	// Now split
 	newRange, numGivenUp, ok := spaceset.GiveUpSpace()
 	wt.AssertBool(t, ok, true, "GiveUpSpace result")
-	wt.AssertTrue(t, newRange.Equal(net.ParseIP("10.0.1.23")), "Invalid start")
-	wt.AssertEqualUint32(t, numGivenUp, 24, "GiveUpSpace 1 size")
-	wt.AssertEqualUint32(t, spaceset.NumFreeAddresses(), 23, "num free addresses")
+	wt.AssertTrue(t, newRange.Equal(net.ParseIP("10.0.1.24")), "Invalid start")
+	wt.AssertEqualUint32(t, numGivenUp, 23, "GiveUpSpace 1 size")
+	wt.AssertEqualUint32(t, spaceset.NumFreeAddresses(), 24, "num free addresses")
 
 	//Space set should now have 2 spaces
-	expected := spaceSetWith(&Space{Start: start, Size: 23},
+	expected := spaceSetWith(&Space{Start: start, Size: 24},
 		&Space{Start: net.ParseIP("10.0.1.47"), Size: 1})
 	wt.AssertTrue(t, spaceset.Equal(expected), "Wrong sets")
 }

@@ -98,16 +98,16 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 	s.assertInvariants()
 	defer s.assertInvariants()
 
-	// Premature optimisation?
 	totalFreeAddresses := s.NumFreeAddresses()
-	if totalFreeAddresses == 0 {
-		return nil, 0, false
+	// Don't give away more than half the space we own, unless it's the very last address
+	var maxDonation = totalFreeAddresses / 2
+	if maxDonation < 1 {
+		maxDonation = 1
 	}
 
 	// First find the biggest free chunk amongst all our spaces
 	var bestStart net.IP
 	var bestSize uint32
-	var bestSpace *Space
 	var spaceIndex int
 	for j, space := range s.spaces {
 		chunkStart, chunkSize := space.BiggestFreeChunk()
@@ -115,9 +115,7 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 			continue
 		}
 
-		bestStart = chunkStart
-		bestSize = chunkSize
-		bestSpace = space
+		bestStart, bestSize = chunkStart, chunkSize
 		spaceIndex = j
 	}
 
@@ -126,36 +124,25 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 		return nil, 0, false
 	}
 
-	// Now right-size this space.
-	// Never give away more than half a space
-	// But don't try ang give away nothing
-	utils.Assert(bestSize <= bestSpace.Size, "Space gave me free bigger than themselves!")
-	var maxDonation = bestSpace.Size / 2
-	if maxDonation < 4 {
-		maxDonation = 4
-	}
-
 	if bestSize > maxDonation {
 		// Try and align the start to the right most
-		shift := bestSize - maxDonation
-		bestStart = utils.Add(bestStart, shift)
+		bestStart = utils.Add(bestStart, bestSize-maxDonation)
 		bestSize = maxDonation
 	}
 
 	utils.Assert(bestSize > 0, "Trying to give away nothing!")
 
+	bestSpace := s.spaces[spaceIndex]
 	lg.Debug.Println("GiveUpSpace start =", bestStart, "size =", bestSize, "from", bestSpace)
 
 	// Now split and remove the final space
 	utils.Assert(bestSpace.contains(bestStart), "WTF?")
 
 	split1, split2 := bestSpace.Split(bestStart)
-	lg.Debug.Println("GiveUpSpace splits", split1, split2)
 	var split3 *Space
 	if split2.Size != bestSize {
 		endAddress := utils.Add(bestStart, bestSize)
 		split2, split3 = split2.Split(endAddress)
-		lg.Debug.Println("GiveUpSpace splits", split1, split2, split3)
 	}
 
 	utils.Assert(split2.NumFreeAddresses() == bestSize, "Trying to free a space with stuff in it!")
