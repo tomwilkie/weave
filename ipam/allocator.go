@@ -401,6 +401,14 @@ func (alloc *Allocator) SetInterfaces(gossip router.Gossip, leadership router.Le
 // ACTOR server
 
 func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
+	defer func() {
+		if r := recover(); r == utils.ErrAssertion {
+			alloc.infof("Allocator goroutine is exiting due to assertion error.")
+		} else {
+			panic(r)
+		}
+	}()
+
 	for {
 		action := <-actionChan
 		if action == nil {

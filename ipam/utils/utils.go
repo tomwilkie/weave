@@ -1,10 +1,16 @@
 package utils
 
 import (
+	"errors"
 	"net"
+	"runtime"
+
+	"github.com/weaveworks/weave/common"
 )
 
-// We shouldn't ever get any errors on *encoding*, but if we do, this will make sure we get to hear about them.
+var ErrAssertion = errors.New("Assertion Error")
+
+//  We shouldn't ever get any errors on *encoding*, but if we do, this will make sure we get to hear about them.
 func panicOnError(err error) {
 	if err != nil {
 		panic(err)
@@ -44,6 +50,9 @@ func Subtract(a, b net.IP) int64 {
 // Assert test is true, panic otherwise
 func Assert(test bool) {
 	if !test {
-		panic("Assertion failure")
+		var buf = make([]byte, 1024)
+		written := runtime.Stack(buf, false)
+		common.Error.Printf("Assertion Error:\n%s", buf[:written])
+		panic(ErrAssertion)
 	}
 }
