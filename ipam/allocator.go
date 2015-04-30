@@ -481,8 +481,7 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	start, size, ok := alloc.spaceSet.GiveUpSpace()
 	if !ok {
 		free := alloc.spaceSet.NumFreeAddresses()
-		utils.Assert(free == 0,
-			fmt.Sprintf("Couldn't give up space but I have %d free addresses", free))
+		utils.Assert(free == 0)
 		alloc.debugln("No space to give to peer", to)
 		return
 	}
@@ -519,15 +518,14 @@ func (alloc *Allocator) assertInvariants() {
 	ranges := alloc.ring.OwnedRanges()
 	spaces := alloc.spaceSet.Spaces()
 
-	utils.Assert(len(ranges) == len(spaces), "Ring and SpaceSet are out of sync!")
+	utils.Assert(len(ranges) == len(spaces))
 
 	for i := 0; i < len(ranges); i++ {
 		r := ranges[i]
 		s := spaces[i]
 
 		rSize := uint32(utils.Subtract(r.End, r.Start))
-		utils.Assert(s.Start.Equal(r.Start) && s.Size == rSize,
-			fmt.Sprintf("Range starting at %s out of sync with space set!", r.Start))
+		utils.Assert(s.Start.Equal(r.Start) && s.Size == rSize)
 	}
 }
 

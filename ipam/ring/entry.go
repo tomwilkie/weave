@@ -79,7 +79,7 @@ func (es *entries) remove(i int) {
 //     token on the ring; luckily an accurate answer is not needed
 //     by the call sites in this case.
 func (es entries) between(token uint32, i, j int) bool {
-	utils.Assert(i < j, "Start and end must be in order")
+	utils.Assert(i < j)
 
 	first := es.entry(i)
 	second := es.entry(j)
