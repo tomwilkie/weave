@@ -20,8 +20,7 @@ type Space struct {
 const MaxSize = math.MaxInt32 // big.Int uses 'int' for indexing, so assume it might be 32-bit
 
 func (space *Space) assertInvariants() {
-	utils.Assert(space.inuse.Max() < int(space.Size),
-		"In-use list must not be bigger than size")
+	utils.Assert(space.inuse.Max() < int(space.Size))
 }
 
 func (space *Space) contains(addr net.IP) bool {
@@ -80,8 +79,8 @@ func (space *Space) Free(addr net.IP) error {
 // assertFree asserts that the size consequtive IPs from start
 // (inclusive) are not allocated
 func (space *Space) assertFree(start net.IP, size uint32) {
-	utils.Assert(space.contains(start), "Range outside my care")
-	utils.Assert(space.contains(utils.Add(start, size-1)), "Range outside my care")
+	utils.Assert(space.contains(start))
+	utils.Assert(space.contains(utils.Add(start, size-1)))
 
 	startOffset := int(utils.Subtract(start, space.Start))
 	if startOffset > space.inuse.Max() { // Anything beyond this is free
@@ -89,7 +88,7 @@ func (space *Space) assertFree(start net.IP, size uint32) {
 	}
 
 	for i := startOffset; i < startOffset+int(size); i++ {
-		utils.Assert(!space.inuse.Has(i), "Address in use!")
+		utils.Assert(!space.inuse.Has(i))
 	}
 }
 
@@ -138,7 +137,7 @@ func (space *Space) BiggestFreeChunk() (net.IP, uint32) {
 
 // Grow increases the size of this space to size.
 func (space *Space) Grow(size uint32) {
-	utils.Assert(space.Size < size, "Cannot shrink a space!")
+	utils.Assert(space.Size < size)
 	space.Size = size
 }
 
@@ -154,7 +153,7 @@ func (space *Space) String() string {
 
 // Split divide this space into two new spaces at a given address, copying allocations and frees.
 func (space *Space) Split(addr net.IP) (*Space, *Space) {
-	utils.Assert(space.contains(addr), "Splitting around a point not in the space!")
+	utils.Assert(space.contains(addr))
 	breakpoint := utils.Subtract(addr, space.Start)
 	ret1 := &Space{Start: space.Start, Size: uint32(breakpoint)}
 	ret2 := &Space{Start: addr, Size: space.Size - uint32(breakpoint)}

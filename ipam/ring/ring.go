@@ -98,7 +98,7 @@ func (r *Ring) checkInvariants() error {
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
-	utils.Assert(start < end, "Start needs to be less than end!")
+	utils.Assert(start < end)
 
 	ring := &Ring{Start: start, End: end, Peername: peer, Entries: make([]*entry, 0)}
 	ring.updateExportedVariables()
@@ -149,10 +149,10 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	// ----------------- Start of Checks -----------------
 
-	utils.Assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
-	utils.Assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
-	utils.Assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
-	utils.Assert(length > 0, "Cannot create zero-sized ranges")
+	utils.Assert(r.Start <= start && start < r.End)
+	utils.Assert(r.Start < end && end <= r.End)
+	utils.Assert(len(r.Entries) > 0)
+	utils.Assert(length > 0)
 
 	// A note re:TOMBSTONES - this is tricky, as we need to do our checks on a
 	// view of the ring minus tombstones (new ranges can span tombstoned entries),
@@ -166,9 +166,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	})
 	preceedingEntry--
 
-	utils.Assert(len(filteredEntries) > 0, "Cannot grant into an empty ring, as by definition you don't own anything.")
+	utils.Assert(len(filteredEntries) > 0)
 	previousLiveEntry := filteredEntries.entry(preceedingEntry)
-	utils.Assert(previousLiveEntry.Peer == r.Peername, "Trying to grant in a range I don't own")
+	utils.Assert(previousLiveEntry.Peer == r.Peername)
 
 	// At the end, the check is a little trickier.  There is never an entry with
 	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
@@ -181,8 +181,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// the current and the next.
 	nextLiveEntry := filteredEntries.entry(preceedingEntry + 1)
 	utils.Assert(filteredEntries.between(end, preceedingEntry, preceedingEntry+1) ||
-		nextLiveEntry.Token == end,
-		"Trying to grant spanning a token")
+		nextLiveEntry.Token == end)
 
 	// ----------------- End of Checks -----------------
 
@@ -232,7 +231,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//        are all tombstones.
 	//        => this is fine, insert away - no need to check, we did that already
 	default:
-		utils.Assert(!found, "WTF")
+		utils.Assert(!found)
 		r.Entries.insert(entry{Token: end, Peer: r.Peername, Free: endFree})
 	}
 }
@@ -420,7 +419,7 @@ func (r *Ring) OwnedRanges() []Range {
 
 // ClaimItAll claims the entire ring for this peer.  Only works for empty rings.
 func (r *Ring) ClaimItAll() {
-	utils.Assert(r.Empty(), "Cannot bootstrap ring with entries in it!")
+	utils.Assert(r.Empty())
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
 
@@ -464,7 +463,7 @@ func (r *Ring) ReportFree(freespace map[uint32]uint32) {
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
 
-	utils.Assert(!r.Empty(), "Cannot ReportFree on empty ring!")
+	utils.Assert(!r.Empty())
 	entries := r.Entries.filteredEntries() // We don't want to report free on tombstones
 
 	// As OwnedRanges splits around the origin, we need to
@@ -472,7 +471,7 @@ func (r *Ring) ReportFree(freespace map[uint32]uint32) {
 	if free, found := freespace[r.Start]; found && entries.entry(0).Token != r.Start {
 		lastToken := entries.entry(-1).Token
 		prevFree, found := freespace[lastToken]
-		utils.Assert(found, "Reporting freespace on origin, and not preceeding token!")
+		utils.Assert(found)
 		freespace[lastToken] = prevFree + free
 		delete(freespace, r.Start)
 	}
@@ -483,13 +482,12 @@ func (r *Ring) ReportFree(freespace map[uint32]uint32) {
 			return entries[j].Token >= start
 		})
 
-		utils.Assert(i < len(entries) && entries[i].Token == start &&
-			entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
+		utils.Assert(i < len(entries) && entries[i].Token == start && entries[i].Peer == r.Peername)
 
 		// Check we're not reporting more space than the range
 		entry, next := entries.entry(i), entries.entry(i+1)
 		maxSize := r.distance(entry.Token, next.Token)
-		utils.Assert(free <= maxSize, "Trying to report more free space than possible")
+		utils.Assert(free <= maxSize)
 
 		if entries[i].Free == free {
 			return
@@ -510,7 +508,7 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 
 	// iterate through tokens IGNORING tombstones
 	for _, entry := range r.Entries.filteredEntries() {
-		utils.Assert(entry.Tombstone == 0, "List shouldn't contain tombstoned entries")
+		utils.Assert(entry.Tombstone == 0)
 
 		// Ignore ranges with no free space
 		if entry.Free <= 0 {
@@ -598,7 +596,7 @@ func (r *Ring) Contains(addr net.IP) bool {
 // Owner returns the peername which owns the range containing addr
 func (r *Ring) Owner(addr net.IP) router.PeerName {
 	token := utils.IP4int(addr)
-	utils.Assert(r.Start <= token && token < r.End, "Token out of range")
+	utils.Assert(r.Start <= token && token < r.End)
 
 	r.assertInvariants()
 	// There can be no owners on an empty ring
