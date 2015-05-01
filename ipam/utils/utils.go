@@ -42,8 +42,8 @@ func Subtract(a, b net.IP) int64 {
 }
 
 // Assert test is true, panic otherwise
-func Assert(test bool, message string) {
+func Assert(test bool) {
 	if !test {
-		panic(message)
+		panic("Assertion failure")
 	}
 }

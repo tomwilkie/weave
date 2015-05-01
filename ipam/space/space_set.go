@@ -43,7 +43,7 @@ func (s *Set) String() string {
 // -------------------------------------------------
 
 func (s *Set) assertInvariants() {
-	utils.Assert(sort.IsSorted(s), "space set must always be sorted")
+	utils.Assert(sort.IsSorted(s))
 	// TODO invariant around not overlapping
 }
 
@@ -53,7 +53,7 @@ func (s *Set) AddSpace(newspace *Space) {
 	defer s.assertInvariants()
 
 	i := s.find(newspace.Start)
-	utils.Assert(i >= len(s.spaces) || !s.spaces[i].Start.Equal(newspace.Start), "inserting space into list already exists!")
+	utils.Assert(i == len(s.spaces) || !s.spaces[i].Start.Equal(newspace.Start))
 
 	s.spaces = append(s.spaces, &Space{}) // make space
 	copy(s.spaces[i+1:], s.spaces[i:])    // move up
@@ -120,7 +120,7 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 	}
 
 	if bestStart == nil {
-		utils.Assert(s.NumFreeAddresses() == 0, "Failed to find a range but have free addresses")
+		utils.Assert(totalFreeAddresses == 0)
 		return nil, 0, false
 	}
 
@@ -130,13 +130,13 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 		bestSize = maxDonation
 	}
 
-	utils.Assert(bestSize > 0, "Trying to give away nothing!")
+	utils.Assert(bestSize > 0)
 
 	bestSpace := s.spaces[spaceIndex]
 	lg.Debug.Println("GiveUpSpace start =", bestStart, "size =", bestSize, "from", bestSpace)
 
 	// Now split and remove the final space
-	utils.Assert(bestSpace.contains(bestStart), "WTF?")
+	utils.Assert(bestSpace.contains(bestStart))
 
 	split1, split2 := bestSpace.Split(bestStart)
 	var split3 *Space
@@ -145,7 +145,7 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 		split2, split3 = split2.Split(endAddress)
 	}
 
-	utils.Assert(split2.NumFreeAddresses() == bestSize, "Trying to free a space with stuff in it!")
+	utils.Assert(split2.NumFreeAddresses() == bestSize)
 
 	// Take out the old space, then add up to two new spaces.
 	// Ordering of s.spaces is important.
