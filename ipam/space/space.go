@@ -17,7 +17,7 @@ type Space struct {
 	inuse intsets.Sparse
 }
 
-const MaxSize = math.MaxInt32 // big.Int uses 'int' for indexing, so assume it might be 32-bit
+const MaxSize = math.MaxInt32 // intsets.Sparse uses 'int' for indexing, so assume it might be 32-bit
 
 func (space *Space) assertInvariants() {
 	utils.Assert(space.inuse.Max() < int(space.Size))
