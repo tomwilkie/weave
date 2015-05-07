@@ -145,7 +145,7 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		}
 
 		// gossip across link
-		if _, _, changed := link.to.OnGossipBroadcast(link.from.Encode()); changed {
+		if changed := link.to.OnGossipBroadcast(link.from.Encode()); changed {
 			m.nodeChanged(link.to)
 		}
 

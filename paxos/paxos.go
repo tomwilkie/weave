@@ -52,19 +52,6 @@ type Node struct {
 	firstConsensus AcceptedValue
 }
 
-// GossipData implementation
-type paxosGossipData struct {
-	node *Node
-}
-
-func (d *paxosGossipData) Merge(other router.GossipData) {
-	// no-op
-}
-
-func (d *paxosGossipData) Encode() []byte {
-	return d.node.Encode()
-}
-
 func (node *Node) Init(id router.PeerName, quorum uint) {
 	node.id = id
 	node.quorum = quorum
@@ -94,7 +81,7 @@ func DecodeNodeKnows(msg []byte) (map[router.PeerName]NodeClaims, error) {
 
 // Update this node's information about what other nodes know.
 // Returns true if we learned something new.
-func (node *Node) OnGossipBroadcast(msg []byte) (router.GossipData, error, bool) {
+func (node *Node) OnGossipBroadcast(msg []byte) bool {
 	from_knows, _ := DecodeNodeKnows(msg)
 	//fmt.Printf("%d: decoded %x\n", node.id, from_knows)
 
@@ -123,7 +110,7 @@ func (node *Node) OnGossipBroadcast(msg []byte) (router.GossipData, error, bool)
 	if changed {
 		node.think()
 	}
-	return &paxosGossipData{node}, nil, changed
+	return changed
 }
 
 func max(a uint, b uint) uint {
