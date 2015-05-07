@@ -349,7 +349,10 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error)
 	alloc.debugln("OnGossipBroadcast:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.updateRing(msg)
+		switch msg[0] {
+		case msgRingUpdate:
+			resultChan <- alloc.updateRing(msg[1:])
+		}
 	}
 	return alloc.Gossip(), <-resultChan
 }
@@ -368,7 +371,10 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 	alloc.debugln("Allocator.OnGossip:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.updateRing(msg)
+		switch msg[0] {
+		case msgRingUpdate:
+			resultChan <- alloc.updateRing(msg[1:])
+		}
 	}
 	return nil, <-resultChan // for now, we never propagate updates. TBD
 }
@@ -383,7 +389,7 @@ func (d *ipamGossipData) Merge(other router.GossipData) {
 }
 
 func (d *ipamGossipData) Encode() []byte {
-	return d.alloc.Encode()
+	return append([]byte{msgRingUpdate}, d.alloc.Encode()...)
 }
 
 // Gossip returns a GossipData implementation, which in this case always

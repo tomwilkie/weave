@@ -228,7 +228,7 @@ func TestGossipShutdown(t *testing.T) {
 // Placeholders for test methods that touch the internals of Allocator
 
 func (alloc *Allocator) EncodeState() []byte {
-	return alloc.ring.GossipState()
+	return append([]byte{msgRingUpdate}, alloc.ring.GossipState()...)
 }
 
 // Test we can create three nodes, create ips on two of them, remove those

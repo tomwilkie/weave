@@ -189,7 +189,7 @@ type TestGossipRouter struct {
 func (grouter *TestGossipRouter) GossipBroadcast(update router.GossipData) error {
 	for _, gossipChan := range grouter.gossipChans {
 		select {
-		case gossipChan <- gossipMessage{buf: update.(*ipamGossipData).alloc.ring.GossipState()}:
+		case gossipChan <- gossipMessage{buf: update.(*ipamGossipData).alloc.EncodeState()}:
 		default: // drop the message if we cannot send it
 		}
 	}
