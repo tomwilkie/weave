@@ -1,9 +1,6 @@
 package paxos
 
 import (
-	"bytes"
-	"encoding/gob"
-	//"fmt"
 	"github.com/weaveworks/weave/router"
 )
 
@@ -53,12 +50,12 @@ func (a NodeClaims) equals(b NodeClaims) bool {
 		a.AcceptedVal.Origin.equals(b.AcceptedVal.Origin)
 }
 
-type State map[router.PeerName]NodeClaims
+type GossipState map[router.PeerName]NodeClaims
 
 type Node struct {
 	id     router.PeerName
 	quorum uint
-	knows  State
+	knows  GossipState
 	// The first consensus the Node observed
 	firstConsensus AcceptedValue
 }
@@ -69,24 +66,13 @@ func (node *Node) Init(id router.PeerName, quorum uint) {
 	node.knows = map[router.PeerName]NodeClaims{}
 }
 
-func init() {
-	gob.Register(State{})
-}
-
-func (node *Node) Encode() []byte {
-	//fmt.Printf("%d: encoding %x\n", node.id, node.knows)
-	buf := new(bytes.Buffer)
-	enc := gob.NewEncoder(buf)
-	p := interface{}(node.knows) // encode as interface type so we can type-switch on receipt
-	if err := enc.Encode(&p); err != nil {
-		panic(err)
-	}
-	return buf.Bytes()
+func (node *Node) GossipState() GossipState {
+	return node.knows
 }
 
 // Update this node's information about what other nodes know.
 // Returns true if we learned something new.
-func (node *Node) Update(from State) bool {
+func (node *Node) Update(from GossipState) bool {
 	changed := false
 
 	for i, from_claims := range from {

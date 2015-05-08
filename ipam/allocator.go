@@ -346,17 +346,32 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error)
 	return alloc.Gossip(), <-resultChan
 }
 
+type gossipState struct {
+	Paxos paxos.GossipState
+	Ring  ring.GossipState
+}
+
+func (alloc *Allocator) encode() []byte {
+	var data gossipState
+	// We're only interested in Paxos until we have a Ring.
+	if alloc.ring.Empty() {
+		data.Paxos = alloc.paxos.GossipState()
+	} else {
+		data.Ring = alloc.ring.GossipState()
+	}
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(data); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
 // Encode (Sync)
 func (alloc *Allocator) Encode() []byte {
 	resultChan := make(chan []byte)
 	alloc.actionChan <- func() {
-		// We're only interested in Paxos until we have a Ring.
-		alloc.debugln("encoding:", alloc.ring.String())
-		if alloc.ring.Empty() {
-			resultChan <- alloc.paxos.Encode()
-		} else {
-			resultChan <- alloc.ring.GossipState()
-		}
+		resultChan <- alloc.encode()
 	}
 	return <-resultChan
 }
@@ -464,36 +479,34 @@ func (alloc *Allocator) driveConsensus() {
 }
 
 func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
-	msg := router.Concat([]byte{kind}, alloc.ring.GossipState())
+	msg := router.Concat([]byte{kind}, alloc.encode())
 	alloc.gossip.GossipUnicast(dest, msg)
 }
 
 func (alloc *Allocator) update(msg []byte) error {
 	reader := bytes.NewReader(msg)
 	decoder := gob.NewDecoder(reader)
-	var input interface{}
+	var data gossipState
 	var err error
 
-	if err := decoder.Decode(&input); err != nil {
+	if err := decoder.Decode(&data); err != nil {
 		return err
 	}
 
-	switch val := input.(type) {
-	case ring.Ring:
+	if data.Ring != nil {
 		//alloc.debugln("Received ring update:", val.String())
-		err = alloc.ring.UpdateWithRing(val)
+		err = alloc.ring.UpdateRing(data.Ring)
 		alloc.considerNewSpaces()
 		alloc.tryPendingOps()
-	case paxos.State:
+	}
+	if data.Paxos != nil {
 		//alloc.debugln("Received paxos update:", val)
-		if alloc.paxos.Update(val) {
+		if alloc.paxos.Update(data.Paxos) {
 			if alloc.paxos.Think() {
 				alloc.gossip.GossipBroadcast(alloc.Gossip())
 			}
 			alloc.createRingIfConsensus()
 		}
-	default:
-		panic("unexpected type")
 	}
 
 	return err

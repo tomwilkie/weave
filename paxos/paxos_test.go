@@ -145,7 +145,7 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		}
 
 		// gossip across link
-		if link.to.Update(link.from.knows) {
+		if link.to.Update(link.from.GossipState()) {
 			link.to.Think()
 			m.nodeChanged(link.to)
 		}

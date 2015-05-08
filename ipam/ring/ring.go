@@ -5,7 +5,6 @@ package ring
 
 import (
 	"bytes"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -330,44 +329,24 @@ func (r *Ring) merge(gossip Ring) error {
 	return nil
 }
 
-// UpdateRing updates the ring with the state in msg
-func (r *Ring) UpdateRing(msg []byte) error {
-	reader := bytes.NewReader(msg)
-	decoder := gob.NewDecoder(reader)
-	var gossipedRing interface{}
-
-	if err := decoder.Decode(&gossipedRing); err != nil {
-		return err
-	}
-	return r.UpdateWithRing(gossipedRing.(Ring))
-}
-
-func (r *Ring) UpdateWithRing(gossipedRing Ring) error {
+// UpdateRing updates the ring with the state from another ring
+func (r *Ring) UpdateRing(gossipedRing GossipState) error {
 	skew := now() - gossipedRing.Now
 	if -maxClockSkew > skew || skew > maxClockSkew {
 		return ErrClockSkew
 	}
 
-	if err := r.merge(gossipedRing); err != nil {
+	if err := r.merge(*gossipedRing); err != nil {
 		return err
 	}
 	return nil
 }
 
-func init() {
-	gob.Register(Ring{})
-}
+type GossipState *Ring
 
-// GossipState returns the encoded state of the ring
-func (r *Ring) GossipState() []byte {
-	buf := new(bytes.Buffer)
-	enc := gob.NewEncoder(buf)
-	r.Now = now()
-	p := interface{}(r) // encode as interface type so we can type-switch on receipt
-	if err := enc.Encode(&p); err != nil {
-		panic(err)
-	}
-	return buf.Bytes()
+// GossipState returns the state of the ring to be encoded as gossip
+func (r *Ring) GossipState() GossipState {
+	return r
 }
 
 // Empty returns true if the ring has no live entries (may contain tombstones)

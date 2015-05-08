@@ -165,7 +165,7 @@ func TestCancel(t *testing.T) {
 	alloc2.Start()
 
 	// tell peers about each other
-	alloc1.OnGossipBroadcast(alloc2.EncodeState())
+	alloc1.OnGossipBroadcast(alloc2.encode())
 
 	// Get some IPs, so each allocator has some space
 	res1 := alloc1.Allocate("foo", nil)
@@ -226,17 +226,6 @@ func TestGossipShutdown(t *testing.T) {
 	wt.AssertEqualString(t, addr2.String(), "<nil>", "address")
 
 	CheckAllExpectedMessagesSent(alloc)
-}
-
-// Placeholders for test methods that touch the internals of Allocator
-
-func (alloc *Allocator) EncodeState() []byte {
-	// This has to match Allocator.Encode().  Why do we do this differently?  dunno...
-	if alloc.ring.Empty() {
-		return alloc.paxos.Encode()
-	} else {
-		return alloc.ring.GossipState()
-	}
 }
 
 // Test we can create three nodes, create ips on two of them, remove those
