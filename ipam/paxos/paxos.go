@@ -56,8 +56,6 @@ type Node struct {
 	id     router.PeerName
 	quorum uint
 	knows  GossipState
-	// The first consensus the Node observed
-	firstConsensus AcceptedValue
 }
 
 func (node *Node) Init(id router.PeerName, quorum uint) {
@@ -193,14 +191,6 @@ func (node *Node) Think() bool {
 
 	claims_changed := !node.knows[node.id].equals(our_claims)
 	node.knows[node.id] = our_claims
-
-	if !node.firstConsensus.Origin.valid() {
-		ok, val := node.consensus()
-		if ok {
-			//fmt.Printf("%d: we have consensus!\n", node.id)
-			node.firstConsensus = val
-		}
-	}
 	return claims_changed
 }
 

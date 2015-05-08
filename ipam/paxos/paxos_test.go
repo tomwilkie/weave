@@ -8,9 +8,15 @@ import (
 	"time"
 )
 
+type TestNode struct {
+	Node
+	// The first consensus the Node observed
+	firstConsensus AcceptedValue
+}
+
 type Link struct {
-	from *Node
-	to   *Node
+	from *TestNode
+	to   *TestNode
 
 	// A link is considered ready if it is worthwhile gossipping
 	// along it (i.e. unless we already gossipped along it and the
@@ -22,14 +28,14 @@ type Link struct {
 
 type Model struct {
 	quorum     uint
-	nodes      []Node
+	nodes      []TestNode
 	readyLinks []*Link
 	// Topology
-	links    map[*Node][]*Link
-	isolated map[*Node]bool
+	links    map[*TestNode][]*Link
+	isolated map[*TestNode]bool
 }
 
-func (m *Model) addLink(a, b *Node) {
+func (m *Model) addLink(a, b *TestNode) {
 	ab := Link{from: a, to: b, ready: len(m.readyLinks)}
 	m.links[a] = append(m.links[a], &ab)
 	ba := Link{from: b, to: a, ready: len(m.readyLinks) + 1}
@@ -57,10 +63,10 @@ type TestParams struct {
 func makeRandomModel(params *TestParams, r *rand.Rand) *Model {
 	m := Model{
 		quorum:     params.nodeCount/2 + 1,
-		nodes:      make([]Node, params.nodeCount),
+		nodes:      make([]TestNode, params.nodeCount),
 		readyLinks: []*Link{},
-		isolated:   make(map[*Node]bool),
-		links:      make(map[*Node][]*Link),
+		isolated:   make(map[*TestNode]bool),
+		links:      make(map[*TestNode][]*Link),
 	}
 
 	for i := range m.nodes {
@@ -91,7 +97,7 @@ func makeRandomModel(params *TestParams, r *rand.Rand) *Model {
 }
 
 // Mark all the outgoing links from a node as ready
-func (m *Model) nodeChanged(node *Node) {
+func (m *Model) nodeChanged(node *TestNode) {
 	for _, l := range m.links[node] {
 		if l.ready < 0 {
 			l.ready = len(m.readyLinks)
@@ -110,7 +116,7 @@ func (m *Model) unreadyLink(link *Link) {
 }
 
 // Isolate a node
-func (m *Model) isolateNode(node *Node) {
+func (m *Model) isolateNode(node *TestNode) {
 	m.isolated[node] = true
 	for _, l := range m.links[node] {
 		if l.ready >= 0 {
@@ -119,7 +125,7 @@ func (m *Model) isolateNode(node *Node) {
 	}
 }
 
-func (m *Model) pickNode(r *rand.Rand) *Node {
+func (m *Model) pickNode(r *rand.Rand) *TestNode {
 	for {
 		node := &m.nodes[r.Intn(len(m.nodes))]
 		if !m.isolated[node] {
@@ -145,9 +151,18 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		}
 
 		// gossip across link
-		if link.to.Update(link.from.GossipState()) {
-			link.to.Think()
-			m.nodeChanged(link.to)
+		node := link.to
+		if node.Update(link.from.GossipState()) {
+			node.Think()
+
+			if !node.firstConsensus.Origin.valid() {
+				ok, val := node.consensus()
+				if ok {
+					node.firstConsensus = val
+				}
+			}
+
+			m.nodeChanged(node)
 		}
 
 		m.unreadyLink(link)
