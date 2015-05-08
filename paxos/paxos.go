@@ -205,7 +205,7 @@ func (node *Node) Think() bool {
 		}
 	}
 
-	claims_changed := node.knows[node.id].equals(our_claims)
+	claims_changed := !node.knows[node.id].equals(our_claims)
 	node.knows[node.id] = our_claims
 
 	if !node.firstConsensus.Origin.valid() {
