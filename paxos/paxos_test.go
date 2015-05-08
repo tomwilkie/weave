@@ -145,7 +145,8 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		}
 
 		// gossip across link
-		if changed := link.to.OnGossipBroadcast(link.from.Encode()); changed {
+		if link.to.Update(link.from.Encode()) {
+			link.to.Think()
 			m.nodeChanged(link.to)
 		}
 
@@ -180,7 +181,7 @@ func (m *Model) validate() {
 	var origin ProposalID
 
 	for i := range m.nodes {
-		ok, val := m.nodes[i].Consensus()
+		ok, val := m.nodes[i].consensus()
 		if !ok {
 			panic("Node doesn't know about consensus")
 		}

@@ -15,6 +15,10 @@ type ProposalID struct {
 	Proposer router.PeerName
 }
 
+func (a ProposalID) equals(b ProposalID) bool {
+	return a.Round == b.Round && a.Proposer == b.Proposer
+}
+
 func (a ProposalID) precedes(b ProposalID) bool {
 	return a.Round < b.Round || (a.Round == b.Round && a.Proposer < b.Proposer)
 }
@@ -42,6 +46,11 @@ type NodeClaims struct {
 	// The accepted proposal, if valid
 	Accepted    ProposalID
 	AcceptedVal AcceptedValue
+}
+
+func (a NodeClaims) equals(b NodeClaims) bool {
+	return a.Promise.equals(b.Promise) && a.Accepted.equals(b.Accepted) &&
+		a.AcceptedVal.Origin.equals(b.AcceptedVal.Origin)
 }
 
 type Node struct {
@@ -81,7 +90,7 @@ func DecodeNodeKnows(msg []byte) (map[router.PeerName]NodeClaims, error) {
 
 // Update this node's information about what other nodes know.
 // Returns true if we learned something new.
-func (node *Node) OnGossipBroadcast(msg []byte) bool {
+func (node *Node) Update(msg []byte) bool {
 	from_knows, _ := DecodeNodeKnows(msg)
 	//fmt.Printf("%d: decoded %x\n", node.id, from_knows)
 
@@ -106,9 +115,6 @@ func (node *Node) OnGossipBroadcast(msg []byte) bool {
 		}
 
 		node.knows[i] = claims
-	}
-	if changed {
-		node.think()
 	}
 	return changed
 }
@@ -141,8 +147,8 @@ func (node *Node) Propose() {
 	node.knows[node.id] = our_claims
 }
 
-// The heart of the consensus algorithm.
-func (node *Node) think() {
+// The heart of the consensus algorithm. Return true if we have changed our claims.
+func (node *Node) Think() bool {
 	our_claims := node.knows[node.id]
 
 	// The "Promise" step of Paxos: Copy the highest known
@@ -206,15 +212,17 @@ func (node *Node) think() {
 		}
 	}
 
+	claims_changed := node.knows[node.id].equals(our_claims)
 	node.knows[node.id] = our_claims
 
 	if !node.firstConsensus.Origin.valid() {
-		ok, val := node.Consensus()
+		ok, val := node.consensus()
 		if ok {
 			//fmt.Printf("%d: we have consensus!\n", node.id)
 			node.firstConsensus = val
 		}
 	}
+	return claims_changed
 }
 
 // When we get to pick a value, we use the set of nodes we know about.
@@ -231,7 +239,7 @@ func (node *Node) pickValue() Value {
 }
 
 // Has a consensus been reached, based on the known claims of other nodes?
-func (node *Node) Consensus() (bool, AcceptedValue) {
+func (node *Node) consensus() (bool, AcceptedValue) {
 	counts := map[ProposalID]uint{}
 
 	for _, claims := range node.knows {
@@ -246,4 +254,10 @@ func (node *Node) Consensus() (bool, AcceptedValue) {
 	}
 
 	return false, AcceptedValue{}
+}
+
+// Consensus for public consumption - return just the map
+func (node *Node) Consensus() (bool, map[router.PeerName]struct{}) {
+	ok, val := node.consensus()
+	return ok, val.Value
 }
