@@ -65,7 +65,7 @@ func makeRandomModel(params *TestParams, r *rand.Rand) *Model {
 
 	for i := range m.nodes {
 		m.nodes[i].Init(router.PeerName(i+1), m.quorum)
-		m.nodes[i].Propose()
+		m.nodes[i].propose()
 	}
 
 	for i := 1; i < len(m.nodes); i++ {
@@ -145,8 +145,8 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		}
 
 		// gossip across link
-		if link.to.Update(link.from.Encode()) {
-			link.to.Think()
+		if link.to.update(link.from.encode()) {
+			link.to.think()
 			m.nodeChanged(link.to)
 		}
 
@@ -155,7 +155,7 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		// Re-propose?
 		if r.Float32() < params.reproposeProb {
 			node := m.pickNode(r)
-			node.Propose()
+			node.propose()
 			m.nodeChanged(node)
 		}
 
@@ -168,7 +168,7 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 			// re-propose.  In reality the lack of
 			// consensus would be detected via a timeout
 			node := m.pickNode(r)
-			node.Propose()
+			node.propose()
 			m.nodeChanged(node)
 		}
 	}
