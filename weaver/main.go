@@ -50,6 +50,7 @@ func main() {
 		bufSzMB     int
 		httpAddr    string
 		iprangeCIDR string
+		quorum      int
 		apiPath     string
 	)
 
@@ -66,6 +67,7 @@ func main() {
 	flag.IntVar(&bufSzMB, "bufsz", 8, "capture buffer size in MB")
 	flag.StringVar(&httpAddr, "httpaddr", fmt.Sprintf(":%d", weave.HTTPPort), "address to bind HTTP interface to (disabled if blank, absolute path indicates unix domain socket)")
 	flag.StringVar(&iprangeCIDR, "iprange", "", "CIDR of IP address range to allocate within")
+	flag.IntVar(&quorum, "quorum", 0, "quorum size for IP address allocation")
 	flag.StringVar(&apiPath, "api", "unix:///var/run/docker.sock", "Path to Docker API socket")
 	flag.Parse()
 	peers = flag.Args()
@@ -131,9 +133,13 @@ func main() {
 	initiateConnections(router, peers)
 	if httpAddr != "" {
 		if iprangeCIDR != "" {
-			allocator := createAllocator(router, apiPath, iprangeCIDR)
+			allocator := createAllocator(router, apiPath, iprangeCIDR, determineQuorum(quorum, peers))
 			go handleHTTP(router, httpAddr, allocator)
 		} else {
+			if quorum > 0 {
+				log.Fatal("-quorum flag specified without -iprange")
+			}
+
 			go handleHTTP(router, httpAddr)
 		}
 	}
@@ -177,8 +183,8 @@ func initiateConnections(router *weave.Router, peers []string) {
 	}
 }
 
-func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string) *ipam.Allocator {
-	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, iprangeCIDR, 1) // fixme: quorum
+func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string, quorum uint) *ipam.Allocator {
+	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, iprangeCIDR, quorum)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -193,6 +199,26 @@ func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string) *
 		allocator.OnNewPeer(peer.Name, peer.NickName)
 	})
 	return allocator
+}
+
+// Pick a quorum size heuristically based on the number of peer
+// addresses passed.
+func determineQuorum(quorumFlag int, peers []string) uint {
+	if quorumFlag > 0 {
+		return uint(quorumFlag)
+	}
+
+	// Guess a suitable quorum size based on the list of peer
+	// addresses.  The peer list might or might not contain an
+	// address for this peer, so the conservative assumption is
+	// that it doesn't.  The list might contain multiple addresses
+	// that resolve to the same peer, in which case the quorum
+	// might be larger than it needs to be.  But the user can
+	// specify it explicitly if that becomes a problem.
+	clusterSize := uint(len(peers) + 1)
+	quorum := clusterSize/2 + 1
+	log.Println("Assuming quorum size of", quorum)
+	return quorum
 }
 
 func handleHTTP(router *weave.Router, httpAddr string, others ...interface{}) {
