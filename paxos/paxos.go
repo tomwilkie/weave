@@ -53,12 +53,12 @@ func (a NodeClaims) equals(b NodeClaims) bool {
 		a.AcceptedVal.Origin.equals(b.AcceptedVal.Origin)
 }
 
+type State map[router.PeerName]NodeClaims
+
 type Node struct {
-	actionChan chan<- func()
-	gossip     router.Gossip // our link to the outside world for sending messages
-	id         router.PeerName
-	quorum     uint
-	knows      map[router.PeerName]NodeClaims
+	id     router.PeerName
+	quorum uint
+	knows  State
 	// The first consensus the Node observed
 	firstConsensus AcceptedValue
 }
@@ -69,36 +69,27 @@ func (node *Node) Init(id router.PeerName, quorum uint) {
 	node.knows = map[router.PeerName]NodeClaims{}
 }
 
-func (node *Node) encode() []byte {
+func init() {
+	gob.Register(State{})
+}
+
+func (node *Node) Encode() []byte {
 	//fmt.Printf("%d: encoding %x\n", node.id, node.knows)
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
-	if err := enc.Encode(node.knows); err != nil {
+	p := interface{}(node.knows) // encode as interface type so we can type-switch on receipt
+	if err := enc.Encode(&p); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
 }
 
-func decodeNodeKnows(msg []byte) (map[router.PeerName]NodeClaims, error) {
-	reader := bytes.NewReader(msg)
-	decoder := gob.NewDecoder(reader)
-	var knows map[router.PeerName]NodeClaims
-
-	if err := decoder.Decode(&knows); err != nil {
-		return nil, err
-	}
-	return knows, nil
-}
-
 // Update this node's information about what other nodes know.
 // Returns true if we learned something new.
-func (node *Node) update(msg []byte) bool {
-	from_knows, _ := decodeNodeKnows(msg)
-	//fmt.Printf("%d: decoded %x\n", node.id, from_knows)
-
+func (node *Node) Update(from State) bool {
 	changed := false
 
-	for i, from_claims := range from_knows {
+	for i, from_claims := range from {
 		claims, ok := node.knows[i]
 		if ok {
 			if claims.Promise.precedes(from_claims.Promise) {
@@ -132,7 +123,7 @@ func max(a uint, b uint) uint {
 // Initiate a new proposal, i.e. the Paxos "Prepare" step.  This is
 // simply a matter of gossipping a new proposal that supersedes all
 // others.
-func (node *Node) propose() {
+func (node *Node) Propose() {
 	// Find the highest round number around
 	round := uint(0)
 
@@ -150,7 +141,7 @@ func (node *Node) propose() {
 }
 
 // The heart of the consensus algorithm. Return true if we have changed our claims.
-func (node *Node) think() bool {
+func (node *Node) Think() bool {
 	our_claims := node.knows[node.id]
 
 	// The "Promise" step of Paxos: Copy the highest known
@@ -258,110 +249,8 @@ func (node *Node) consensus() (bool, AcceptedValue) {
 	return false, AcceptedValue{}
 }
 
-func (node *Node) string() string {
-	return "Paxos string todo"
-}
-
-func (node *Node) assertInvariants() {
-	// todo
-}
-
-// paxosGossipData similar to ipamGossipData
-type paxosGossipData struct {
-	node *Node
-}
-
-func (d *paxosGossipData) Merge(other router.GossipData) {}
-func (d *paxosGossipData) Encode() []byte {
-	return d.node.Encode()
-}
-
-// SetInterfaces gives the allocator two interfaces for talking to the outside world
-func (node *Node) SetInterfaces(gossip router.Gossip) {
-	node.gossip = gossip
-}
-
-// Start runs the allocator goroutine
-func (node *Node) Start(gossip router.Gossip) {
-	node.gossip = gossip
-	actionChan := make(chan func(), router.ChannelSize)
-	node.actionChan = actionChan
-	go node.actorLoop(actionChan)
-}
-
-// Actor client API
-
-// Propose (Async)
-func (node *Node) Propose() {
-	node.actionChan <- func() {
-		node.propose()
-	}
-}
-
-// Consensus for public consumption - return the set, or nil if no consensus. Sync.
+// Consensus for public consumption - return just the map, which will be nil if no consensus
 func (node *Node) Consensus() map[router.PeerName]struct{} {
-	resultChan := make(chan map[router.PeerName]struct{})
-	node.actionChan <- func() {
-		_, val := node.consensus()
-		resultChan <- val.Value
-	}
-	return <-resultChan
-}
-
-// Encode (Sync)
-func (node *Node) Encode() []byte {
-	resultChan := make(chan []byte)
-	node.actionChan <- func() {
-		resultChan <- node.encode()
-	}
-	return <-resultChan
-}
-
-// Sync.
-func (node *Node) String() string {
-	resultChan := make(chan string)
-	node.actionChan <- func() {
-		resultChan <- node.string()
-	}
-	return <-resultChan
-}
-
-func (node *Node) OnGossipUnicast(sender router.PeerName, msg []byte) error {
-	// not expected
-	return nil
-}
-
-func (node *Node) OnGossipBroadcast(msg []byte) (router.GossipData, error) {
-	resultChan := make(chan error)
-	node.actionChan <- func() {
-		node.update(msg)
-		resultChan <- nil
-	}
-	return &paxosGossipData{node}, <-resultChan
-}
-
-func (node *Node) OnGossip(msg []byte) (router.GossipData, error) {
-	resultChan := make(chan error)
-	node.actionChan <- func() {
-		node.update(msg)
-		resultChan <- nil
-	}
-	return &paxosGossipData{node}, <-resultChan
-}
-
-// ACTOR server
-
-func (node *Node) actorLoop(actionChan <-chan func()) {
-	for {
-		action := <-actionChan
-		if action == nil {
-			break
-		}
-		action()
-		if node.think() {
-			// something changed - tell everyone else
-			node.gossip.GossipBroadcast(&paxosGossipData{node})
-		}
-		node.assertInvariants()
-	}
+	_, val := node.consensus()
+	return val.Value
 }
