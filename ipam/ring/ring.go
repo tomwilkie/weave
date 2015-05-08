@@ -334,12 +334,15 @@ func (r *Ring) merge(gossip Ring) error {
 func (r *Ring) UpdateRing(msg []byte) error {
 	reader := bytes.NewReader(msg)
 	decoder := gob.NewDecoder(reader)
-	gossipedRing := Ring{}
+	var gossipedRing interface{}
 
 	if err := decoder.Decode(&gossipedRing); err != nil {
 		return err
 	}
+	return r.UpdateWithRing(gossipedRing.(Ring))
+}
 
+func (r *Ring) UpdateWithRing(gossipedRing Ring) error {
 	skew := now() - gossipedRing.Now
 	if -maxClockSkew > skew || skew > maxClockSkew {
 		return ErrClockSkew
@@ -351,12 +354,17 @@ func (r *Ring) UpdateRing(msg []byte) error {
 	return nil
 }
 
+func init() {
+	gob.Register(Ring{})
+}
+
 // GossipState returns the encoded state of the ring
 func (r *Ring) GossipState() []byte {
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
 	r.Now = now()
-	if err := enc.Encode(r); err != nil {
+	p := interface{}(r) // encode as interface type so we can type-switch on receipt
+	if err := enc.Encode(&p); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()

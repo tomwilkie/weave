@@ -178,11 +178,11 @@ func initiateConnections(router *weave.Router, peers []string) {
 }
 
 func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string) *ipam.Allocator {
-	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, iprangeCIDR)
+	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, iprangeCIDR, 1) // fixme: quorum
 	if err != nil {
 		log.Fatal(err)
 	}
-	allocator.SetInterfaces(router.NewGossip("IPallocation", allocator), router.Peers)
+	allocator.SetInterfaces(router.NewGossip("IPallocation", allocator))
 	allocator.Start()
 	allocator.HandleHTTP(http.DefaultServeMux)
 	err = updater.Start(apiPath, allocator)

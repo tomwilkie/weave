@@ -2,6 +2,7 @@ package ipam
 
 import (
 	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"net"
@@ -56,12 +57,12 @@ type Allocator struct {
 	pendingAllocates   []operation                // held until we get some free space
 	pendingClaims      []operation                // held until we know who owns the space
 	gossip             router.Gossip              // our link to the outside world for sending messages
-	paxos              *paxos.Node
+	paxos              paxos.Node
 	shuttingDown       bool // to avoid doing any requests while trying to tombstone ourself
 }
 
 // NewAllocator creates and initialises a new Allocator
-func NewAllocator(ourName router.PeerName, subnetCIDR string) (*Allocator, error) {
+func NewAllocator(ourName router.PeerName, subnetCIDR string, quorum uint) (*Allocator, error) {
 	_, subnet, err := net.ParseCIDR(subnetCIDR)
 	if err != nil {
 		return nil, err
@@ -87,6 +88,7 @@ func NewAllocator(ourName router.PeerName, subnetCIDR string) (*Allocator, error
 		owned:              make(map[string]net.IP),
 		otherPeerNicknames: make(map[router.PeerName]string),
 	}
+	alloc.paxos.Init(ourName, quorum)
 	return alloc, nil
 }
 
@@ -120,7 +122,7 @@ func (alloc *Allocator) doOperation(op operation, ops *[]operation) {
 			op.Cancel()
 			return
 		}
-		alloc.createRingIfNecessary()
+		alloc.driveConsensus()
 		if !op.Try(alloc) {
 			*ops = append(*ops, op)
 		}
@@ -328,7 +330,7 @@ func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) erro
 			alloc.donateSpace(sender)
 			resultChan <- nil
 		case msgRingUpdate:
-			resultChan <- alloc.updateRing(msg[1:])
+			resultChan <- alloc.update(msg[1:])
 		}
 	}
 	return <-resultChan
@@ -339,7 +341,7 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error)
 	alloc.debugln("OnGossipBroadcast:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.updateRing(msg)
+		resultChan <- alloc.update(msg)
 	}
 	return alloc.Gossip(), <-resultChan
 }
@@ -348,7 +350,13 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error)
 func (alloc *Allocator) Encode() []byte {
 	resultChan := make(chan []byte)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.ring.GossipState()
+		// We're only interested in Paxos until we have a Ring.
+		alloc.debugln("encoding:", alloc.ring.String())
+		if alloc.ring.Empty() {
+			resultChan <- alloc.paxos.Encode()
+		} else {
+			resultChan <- alloc.ring.GossipState()
+		}
 	}
 	return <-resultChan
 }
@@ -358,7 +366,7 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 	alloc.debugln("Allocator.OnGossip:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.updateRing(msg)
+		resultChan <- alloc.update(msg)
 	}
 	return nil, <-resultChan // for now, we never propagate updates. TBD
 }
@@ -383,9 +391,8 @@ func (alloc *Allocator) Gossip() router.GossipData {
 }
 
 // SetInterfaces gives the allocator two interfaces for talking to the outside world
-func (alloc *Allocator) SetInterfaces(gossip router.Gossip, paxos *paxos.Node) {
+func (alloc *Allocator) SetInterfaces(gossip router.Gossip) {
 	alloc.gossip = gossip
-	alloc.paxos = paxos
 }
 
 // ACTOR server
@@ -429,7 +436,19 @@ func (alloc *Allocator) string() string {
 	return buf.String()
 }
 
-func (alloc *Allocator) createRingIfNecessary() {
+func (alloc *Allocator) createRingIfConsensus() {
+	if alloc.ring.Empty() {
+		if val := alloc.paxos.Consensus(); val != nil {
+			alloc.debugln("Paxos consensus:", val)
+			alloc.ring.ClaimForSet(val)
+			alloc.considerNewSpaces()
+			alloc.gossip.GossipBroadcast(alloc.Gossip())
+			alloc.tryPendingOps()
+		}
+	}
+}
+
+func (alloc *Allocator) driveConsensus() {
 	if !alloc.ring.Empty() {
 		return
 	}
@@ -439,14 +458,9 @@ func (alloc *Allocator) createRingIfNecessary() {
 		alloc.debugln("Paxos proposing")
 		alloc.paxos.Propose()
 		val = alloc.paxos.Consensus()
-	}
-	if val != nil {
-		alloc.debugln("Paxos consensus:", val)
-		alloc.ring.ClaimForSet(val)
-		alloc.considerNewSpaces()
 		alloc.gossip.GossipBroadcast(alloc.Gossip())
-		alloc.tryPendingOps()
 	}
+	alloc.createRingIfConsensus()
 }
 
 func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
@@ -454,10 +468,34 @@ func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
 	alloc.gossip.GossipUnicast(dest, msg)
 }
 
-func (alloc *Allocator) updateRing(msg []byte) error {
-	err := alloc.ring.UpdateRing(msg)
-	alloc.considerNewSpaces()
-	alloc.tryPendingOps()
+func (alloc *Allocator) update(msg []byte) error {
+	reader := bytes.NewReader(msg)
+	decoder := gob.NewDecoder(reader)
+	var input interface{}
+	var err error
+
+	if err := decoder.Decode(&input); err != nil {
+		return err
+	}
+
+	switch val := input.(type) {
+	case ring.Ring:
+		//alloc.debugln("Received ring update:", val.String())
+		err = alloc.ring.UpdateWithRing(val)
+		alloc.considerNewSpaces()
+		alloc.tryPendingOps()
+	case paxos.State:
+		//alloc.debugln("Received paxos update:", val)
+		if alloc.paxos.Update(val) {
+			if alloc.paxos.Think() {
+				alloc.gossip.GossipBroadcast(alloc.Gossip())
+			}
+			alloc.createRingIfConsensus()
+		}
+	default:
+		panic("unexpected type")
+	}
+
 	return err
 }
 

@@ -9,7 +9,6 @@ import (
 
 	"github.com/weaveworks/weave/common"
 	"github.com/weaveworks/weave/ipam/space"
-	"github.com/weaveworks/weave/paxos"
 	"github.com/weaveworks/weave/router"
 	wt "github.com/weaveworks/weave/testing"
 )
@@ -136,19 +135,20 @@ func CheckAllExpectedMessagesSent(allocs ...*Allocator) {
 	}
 }
 
-func testAllocator(t *testing.T, name string, universeCIDR string) *Allocator {
+func testAllocator(t *testing.T, name string, universeCIDR string, quorum uint) *Allocator {
 	ourName, _ := router.PeerNameFromString(name)
-	alloc, _ := NewAllocator(ourName, universeCIDR)
+	alloc, _ := NewAllocator(ourName, universeCIDR, quorum)
 	gossip := &mockGossipComms{t: t, name: name}
-	alloc.SetInterfaces(gossip, nil)
+	alloc.SetInterfaces(gossip)
 	alloc.Start()
 	return alloc
 }
 
 func (alloc *Allocator) claimRingForTesting(allocs ...*Allocator) {
 	set := make(map[router.PeerName]struct{})
-	for _, alloc := range allocs {
-		set[alloc.ourName] = struct{}{}
+	set[alloc.ourName] = struct{}{}
+	for _, alloc2 := range allocs {
+		set[alloc2.ourName] = struct{}{}
 	}
 	alloc.ring.ClaimForSet(set)
 	alloc.considerNewSpaces()
@@ -292,13 +292,10 @@ func makeNetworkOfAllocators(size int, cidr string) ([]*Allocator, TestGossipRou
 	for i := 0; i < size; i++ {
 		peerNameStr := fmt.Sprintf("%02d:00:00:02:00:00", i)
 		peerName, _ := router.PeerNameFromString(peerNameStr)
-		alloc, _ := NewAllocator(peerName, cidr)
-		paxos := &paxos.Node{}
-		paxos.Init(peerName, uint(size/2+1))
+		alloc, _ := NewAllocator(peerName, cidr, uint(size/2+1))
 		gossip := gossipRouter.connect(peerName, alloc)
-		alloc.SetInterfaces(gossip, paxos)
+		alloc.SetInterfaces(gossip)
 		alloc.Start()
-		paxos.Start(gossip)
 		allocs[i] = alloc
 	}
 
