@@ -12,12 +12,9 @@ type ProposalID struct {
 	Proposer router.PeerName
 }
 
-func (a ProposalID) equals(b ProposalID) bool {
-	return a.Round == b.Round && a.Proposer == b.Proposer
-}
-
 func (a ProposalID) precedes(b ProposalID) bool {
-	return a.Round < b.Round || (a.Round == b.Round && a.Proposer < b.Proposer)
+	return a.Round < b.Round ||
+		(a.Round == b.Round && a.Proposer < b.Proposer)
 }
 
 func (a ProposalID) valid() bool {
@@ -46,8 +43,8 @@ type NodeClaims struct {
 }
 
 func (a NodeClaims) equals(b NodeClaims) bool {
-	return a.Promise.equals(b.Promise) && a.Accepted.equals(b.Accepted) &&
-		a.AcceptedVal.Origin.equals(b.AcceptedVal.Origin)
+	return a.Promise == b.Promise && a.Accepted == b.Accepted &&
+		a.AcceptedVal.Origin == b.AcceptedVal.Origin
 }
 
 type GossipState map[router.PeerName]NodeClaims
@@ -124,7 +121,8 @@ func (node *Node) Propose() {
 	node.knows[node.id] = our_claims
 }
 
-// The heart of the consensus algorithm. Return true if we have changed our claims.
+// The heart of the consensus algorithm. Return true if we have
+// changed our claims.
 func (node *Node) Think() bool {
 	our_claims := node.knows[node.id]
 
@@ -189,9 +187,12 @@ func (node *Node) Think() bool {
 		}
 	}
 
-	claims_changed := !node.knows[node.id].equals(our_claims)
+	if our_claims.equals(node.knows[node.id]) {
+		return false
+	}
+
 	node.knows[node.id] = our_claims
-	return claims_changed
+	return true
 }
 
 // When we get to pick a value, we use the set of nodes we know about.
@@ -225,7 +226,8 @@ func (node *Node) consensus() (bool, AcceptedValue) {
 	return false, AcceptedValue{}
 }
 
-// Consensus for public consumption - return just the map, which will be nil if no consensus
+// Consensus for public consumption - return just the map, which will
+// be nil if no consensus
 func (node *Node) Consensus() map[router.PeerName]struct{} {
 	_, val := node.consensus()
 	return val.Value
