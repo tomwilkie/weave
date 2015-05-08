@@ -102,7 +102,7 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 				return
 			}
 
-			if err := alloc.TombstonePeer(ident); err != nil {
+			if err := alloc.AdminTakeoverRanges(ident); err != nil {
 				badRequest(w, err)
 				return
 			}

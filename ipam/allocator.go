@@ -16,10 +16,6 @@ import (
 	"github.com/weaveworks/weave/router"
 )
 
-const (
-	tombstoneTimeout = 14 * 24 * time.Hour
-)
-
 // Kinds of message we can unicast to other peers
 const (
 	msgSpaceRequest = iota
@@ -53,12 +49,12 @@ type Allocator struct {
 	ring               *ring.Ring                 // information on ranges owned by all peers
 	spaceSet           space.Set                  // more detail on ranges owned by us
 	owned              map[string]net.IP          // who owns what address, indexed by container-ID
-	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for tombstoning
+	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for rmpeer
 	pendingAllocates   []operation                // held until we get some free space
 	pendingClaims      []operation                // held until we know who owns the space
 	gossip             router.Gossip              // our link to the outside world for sending messages
 	paxos              paxos.Node
-	shuttingDown       bool // to avoid doing any requests while trying to tombstone ourself
+	shuttingDown       bool // to avoid doing any requests while trying to shut down
 }
 
 // NewAllocator creates and initialises a new Allocator
@@ -273,18 +269,20 @@ func (alloc *Allocator) Shutdown() {
 		alloc.shuttingDown = true
 		alloc.cancelOps(&alloc.pendingClaims)
 		alloc.cancelOps(&alloc.pendingAllocates)
-		alloc.ring.TombstonePeer(alloc.ourName, tombstoneTimeout)
+		if heir := alloc.ring.PickPeerForTransfer(); heir != router.UnknownPeerName {
+			alloc.ring.Transfer(alloc.ourName, heir)
+			alloc.spaceSet.Clear()
+		}
 		alloc.gossip.GossipBroadcast(alloc.Gossip())
-		alloc.spaceSet.Clear()
 		time.Sleep(100 * time.Millisecond)
 		doneChan <- struct{}{}
 	}
 	<-doneChan
 }
 
-// TombstonePeer (Sync) - inserts tombstones for given peer, freeing up the ranges the
-// peer owns.  Only done on adminstrator command.
-func (alloc *Allocator) TombstonePeer(peerNameOrNickname string) error {
+// AdminTakeoverRanges (Sync) - take over the ranges owned by a given peer.
+// Only done on adminstrator command.
+func (alloc *Allocator) AdminTakeoverRanges(peerNameOrNickname string) error {
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
 		peername, found := router.UnknownPeerName, false
@@ -305,14 +303,14 @@ func (alloc *Allocator) TombstonePeer(peerNameOrNickname string) error {
 			}
 		}
 
-		alloc.debugln("TombstonePeer:", peername)
+		alloc.debugln("AdminTakeoverRanges:", peername)
 		if peername == alloc.ourName {
-			resultChan <- fmt.Errorf("Cannot tombstone yourself!")
+			resultChan <- fmt.Errorf("Cannot take over ranges from yourself!")
 			return
 		}
 
 		delete(alloc.otherPeerNicknames, peername)
-		err := alloc.ring.TombstonePeer(peername, tombstoneTimeout)
+		err := alloc.ring.Transfer(peername, alloc.ourName)
 		alloc.considerNewSpaces()
 		resultChan <- err
 	}

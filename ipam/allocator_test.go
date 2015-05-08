@@ -228,9 +228,7 @@ func TestGossipShutdown(t *testing.T) {
 	CheckAllExpectedMessagesSent(alloc)
 }
 
-// Test we can create three nodes, create ips on two of them, remove those
-// two (and therefor all the tokens on the ring) and still continue
-func TestTombstoneEveryone(t *testing.T) {
+func TestTransfer(t *testing.T) {
 	const (
 		cidr = "10.0.1.7/22"
 	)
@@ -251,11 +249,10 @@ func TestTombstoneEveryone(t *testing.T) {
 	router.removePeer(alloc3.ourName)
 	alloc2.Stop()
 	alloc3.Stop()
-	wt.AssertSuccess(t, alloc1.TombstonePeer(alloc2.ourName.String()))
-	wt.AssertSuccess(t, alloc1.TombstonePeer(alloc3.ourName.String()))
+	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc2.ourName.String()))
+	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc3.ourName.String()))
 
-	return // this test not currently supported. FIXME
-	wt.AssertTrue(t, alloc1.ring.Empty(), "Ring not empty!")
+	wt.AssertEqualUint32(t, alloc1.spaceSet.NumFreeAddresses(), 1022, "Total free addresses")
 
 	addr = alloc1.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")

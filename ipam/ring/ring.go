@@ -561,23 +561,27 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 	panic("Should never reach this point")
 }
 
-// TombstonePeer will mark all entries associated with this peer as tombstones
-func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
+func (r *Ring) PickPeerForTransfer() router.PeerName {
+	for _, entry := range r.Entries {
+		if entry.Peer != r.Peername && entry.Tombstone == 0 {
+			return entry.Peer
+		}
+	}
+	return router.UnknownPeerName
+}
+
+// Transfer will mark all entries associated with 'from' peer as owned by 'to' peer
+func (r *Ring) Transfer(from, to router.PeerName) error {
 	r.assertInvariants()
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
 
-	if dt <= 0 {
-		return ErrInvalidTimeout
-	}
-
 	found := false
-	absTimeout := now() + int64(dt)
 
 	for _, entry := range r.Entries {
-		if entry.Peer == peer {
+		if entry.Peer == from && entry.Tombstone == 0 {
 			found = true
-			entry.Tombstone = absTimeout
+			entry.Peer = to
 			entry.Version++
 		}
 	}
