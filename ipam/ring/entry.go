@@ -9,21 +9,19 @@ import (
 
 // Entry represents entries around the ring
 type entry struct {
-	Token     uint32          // The start of this range
-	Peer      router.PeerName // Who owns this range
-	Tombstone int64           // Timestamp when this entry was tombstone; 0 means live
-	Version   uint32          // Version of this range
-	Free      uint32          // Number of free IPs in this range
+	Token   uint32          // The start of this range
+	Peer    router.PeerName // Who owns this range
+	Version uint32          // Version of this range
+	Free    uint32          // Number of free IPs in this range
 }
 
 func (e *entry) Equal(e2 *entry) bool {
 	return e.Token == e2.Token && e.Peer == e2.Peer &&
-		e.Tombstone == e2.Tombstone && e.Version == e2.Version
+		e.Version == e2.Version
 }
 
 func (e *entry) update(peername router.PeerName, free uint32) {
 	e.Peer = peername
-	e.Tombstone = 0
 	e.Version++
 	e.Free = free
 }
@@ -100,15 +98,4 @@ func (es entries) between(token uint32, i, j int) bool {
 	}
 
 	panic("Should never get here - switch covers all possibilities.")
-}
-
-// filteredEntries returns the entires minus tombstones
-func (es entries) filteredEntries() entries {
-	var result = make([]*entry, 0, len(es))
-	for _, entry := range es {
-		if entry.Tombstone == 0 {
-			result = append(result, entry)
-		}
-	}
-	return result
 }

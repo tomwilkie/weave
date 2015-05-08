@@ -10,9 +10,8 @@ import (
 )
 
 var (
-	expRingSize       = expvar.NewMap("ipam.ringSize")
-	expRingEntries    = expvar.NewMap("ipam.ringEntries")
-	expRingTombstones = expvar.NewMap("ipam.ringTombstones")
+	expRingSize    = expvar.NewMap("ipam.ringSize")
+	expRingEntries = expvar.NewMap("ipam.ringEntries")
 )
 
 type _int int
@@ -31,5 +30,4 @@ func (r *Ring) updateExportedVariables() {
 	ringName := utils.IntIP4(r.Start).String()
 	expRingSize.Set(ringName, _uint32(r.End-r.Start))
 	expRingEntries.Set(ringName, _int(len(r.Entries)))
-	expRingTombstones.Set(ringName, _int(len(r.Entries)-len(r.Entries.filteredEntries())))
 }

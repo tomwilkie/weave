@@ -102,11 +102,8 @@ one is the first token.
 
 ![Tokens on the Ring](https://docs.google.com/drawings/d/1hp--q2vmxbBAnPjhza4Kqjr1ugrw2iS1M1GerhH-IKY/pub?w=960&h=288)
 
-When a peer leaves the network, we mark its tokens with a "tombstone"
-flag. Tombstone tokens are ignored when considering ownership.
-
 In more detail:
-- Each token is a tuple {peer name, version, tombstone flag}, placed
+- Each token is a tuple {peer name, version}, placed
   at an IP address.
 - Peer names are taken from Weave: they are unique and survive across restarts.
 - The contents of a token can only be updated by the owning peer, and
@@ -130,13 +127,6 @@ In more detail:
      owned by the peer requesting the space, and one at the end of the
      hole owned by the requestee.
   4. It has no space.
-- Tombstones are designed to expire after 2 weeks.  Host clocks need
-  to be reasonably within sync; if the host clocks differ by more than
-  2 weeks, peer deletion will behave inconsistently. Similarly, you
-  should not allow network partitions to persist for longer than 2 weeks,
-  as you may see previously deleted hosts reappearing.  Nodes gossip
-  their current time, and if a receiving host detects more than 1 hour
-  of clock skew, the gossip will be rejected and the connection dropped.
 
 ## Initialisation
 
@@ -182,10 +172,8 @@ will each pick a different leader. This problem seems fundamental.
 
 ## Peer shutdown
 
-When a peer leaves (a `weave reset` command), it updates all its own
-tokens to be tombstones, then broadcasts the updated ring.  This
-causes its space to be inherited by the owner of the previous tokens
-on the ring, for each range.
+When a peer leaves (a `weave reset` command), it grants all its own
+tokens to another peer, then broadcasts the updated ring.
 
 After sending the message, the peer terminates - it does not wait for
 any response.
@@ -197,10 +185,15 @@ Failures:
 
 To cope with the situation where a peer has left or died without
 managing to tell its peers, an administrator may go to any other peer
-and command that it mark the dead peer's tokens as tombstones (with
-`weave rmpeer`).  This information will then be gossipped out to the
-network.
+and command that it take over the dead peer's tokens (with `weave
+rmpeer`).  This information will then be gossipped out to the network.
 
+(This operation is not guaranteed to be safe - if the dead peer made
+some transfers which have are known to other peers but have not
+reached the peer that does the `rmpeer`, then we get an inconsistent
+ring.  We could make it safe, up to partitions, by inquiring of every
+live peer what its view of the dead peer is, and making sure we use
+the latest info.)
 
 ## Limitations
 

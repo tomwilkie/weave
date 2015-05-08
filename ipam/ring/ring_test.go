@@ -376,7 +376,6 @@ func TestReportFree(t *testing.T) {
 
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
-	ring1.TombstonePeer(peer1name, 10)
 	wt.AssertSuccess(t, ring2.merge(*ring1))
 
 	freespace := make(map[uint32]uint32)
@@ -470,75 +469,22 @@ func TestOwnedRange(t *testing.T) {
 			{Start: ipMiddle, End: ipEnd}}), "invalid")
 }
 
-func TestTombstoneSimple(t *testing.T) {
-	// First test just checks if we can grant some range to a host, when we tombstone it, we get it back
+func TestTransfer(t *testing.T) {
+	// First test just checks if we can grant some range to a host, when we transfer it, we get it back
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
-	ring1.TombstonePeer(peer2name, 10)
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStart, ipEnd}}), "Invalid")
+	ring1.Transfer(peer2name, peer1name)
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStart, ipMiddle}, {ipMiddle, ipEnd}}), "Invalid")
 
-	// Second test is what happens when a token exists at the end of a range but is a tombstone
+	// Second test is what happens when a token exists at the end of a range but is transferred
 	// - does it get resurrected correctly?
 	ring1 = New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
-	ring1.TombstonePeer(peer2name, 10)
+	ring1.Transfer(peer2name, peer1name)
 	ring1.GrantRangeToHost(ipDot10, ipMiddle, peer2name)
-	// TODO - if we tombstone the chap owning ipStart, the range ipEnd -> next token is lost forever!
 	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStart, ipDot10}, {ipMiddle, ipEnd}}), "Invalid")
-
-	// Final test - can we grant range that span tombstones?
-	ring1 = New(ipStart, ipEnd, peer1name)
-	ring1.ClaimItAll()
-	ring1.GrantRangeToHost(ipDot10, ipDot245, peer2name)
-	ring1.TombstonePeer(peer2name, 10)
-	// NB split ranges are not automatically re-merged!
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStart, ipDot245}, {ipDot245, ipEnd}}), "Invalid")
-
-	ring1.GrantRangeToHost(ipStart, ipDot245, peer2name)
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipDot245, ipEnd}}), "Invalid")
-}
-
-func TestTombstoneMerge(t *testing.T) {
-	// First check that a peer panics if its told it has been tombstoned
-	ring1 := New(ipStart, ipEnd, peer1name)
-	ring2 := New(ipStart, ipEnd, peer2name)
-	ring1.ClaimItAll()
-	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
-	wt.AssertSuccess(t, ring2.merge(*ring1))
-	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStart, ipMiddle}}), "Invalid")
-	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(), []Range{{ipMiddle, ipEnd}}), "Invalid")
-
-	ring1.TombstonePeer(peer2name, 10)
-	wt.AssertPanic(t, func() {
-		ring2.merge(*ring1)
-	})
-
-	// First check we can merge tombstones for a third peer
-	ring1 = New(ipStart, ipEnd, peer1name)
-	ring2 = New(ipStart, ipEnd, peer2name)
-	ring1.ClaimItAll()
-	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer3name)
-	wt.AssertSuccess(t, ring2.merge(*ring1))
-
-	ring1.TombstonePeer(peer3name, 10)
-	wt.AssertSuccess(t, ring2.merge(*ring1))
-	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStart, ipEnd}}), "Invalid")
-	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(), []Range{}), "Invalid")
-}
-
-func TestTombstoneDelete(t *testing.T) {
-	ring1 := New(ipStart, ipEnd, peer1name)
-	ring1.ClaimItAll()
-	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
-
-	now = func() int64 { return 0 }
-	wt.AssertSuccess(t, ring1.TombstonePeer(peer2name, 10))
-	ring1.ExpireTombstones(15)
-	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Version: 1, Free: 128}})
 }
 
 func TestOwner(t *testing.T) {
@@ -702,18 +648,18 @@ func TestFuzzRingHard(t *testing.T) {
 		rings = append(rings[:peerIndex], rings[peerIndex+1:]...)
 		theRanges = make(map[int][]Range)
 
-		// Tombstone this peer on another peer, but not this one
+		// Transfer the space for this peer on another peer, but not this one
 		_, otherPeername, otherRing := randomPeer(peerIndex)
 
-		// We need to be in a ~converged ring to tombstone
+		// We need to be in a ~converged ring to rmpeer
 		for _, ring := range rings {
 			wt.AssertSuccess(t, otherRing.merge(*ring))
 		}
 
-		common.Debug.Printf("%s: Tombstoning peer %s", otherPeername, peername)
-		otherRing.TombstonePeer(peername, 100)
+		common.Debug.Printf("%s: transferring from peer %s", otherPeername, peername)
+		otherRing.Transfer(peername, peername)
 
-		// And now tell everyone about the tombstone - tombstones are
+		// And now tell everyone about the transfer - rmpeer is
 		// not partition safe
 		for i, ring := range rings {
 			wt.AssertSuccess(t, ring.merge(*otherRing))
@@ -769,7 +715,7 @@ func TestFuzzRingHard(t *testing.T) {
 	}
 
 	for i := 0; i < iterations; i++ {
-		// about 1 in 10 times, tombstone or add host
+		// about 1 in 10 times, rmpeer or add host
 		n := rand.Intn(10)
 		switch {
 		case n < 1:

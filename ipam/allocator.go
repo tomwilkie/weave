@@ -272,9 +272,9 @@ func (alloc *Allocator) Shutdown() {
 		if heir := alloc.ring.PickPeerForTransfer(); heir != router.UnknownPeerName {
 			alloc.ring.Transfer(alloc.ourName, heir)
 			alloc.spaceSet.Clear()
+			alloc.gossip.GossipBroadcast(alloc.Gossip())
+			time.Sleep(100 * time.Millisecond)
 		}
-		alloc.gossip.GossipBroadcast(alloc.Gossip())
-		time.Sleep(100 * time.Millisecond)
 		doneChan <- struct{}{}
 	}
 	<-doneChan
@@ -419,7 +419,6 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 		action()
 		alloc.assertInvariants()
 		alloc.reportFreeSpace()
-		alloc.ring.ExpireTombstones(time.Now().Unix())
 	}
 }
 
