@@ -135,40 +135,14 @@ made when starting up.  Each peer must be given the same space.
 
 When a peer starts up, it owns no address ranges. If it joins a
 network in which peers already own space, then it can request space
-from another peer as above. If nobody in the network owns any space
-then we follow a process similar to leader election: one peer claims
-the entire space for itself, and then other peers can begin to request
-ranges from it.
+from another peer as above. 
 
-1. An election is triggered by some peer being asked (via command) to
-   allocate or claim an address.
-2. That peer looks at all peers it knows about, and picks the one with
-   the highest ID.
-3. If the one picked is itself, then it inserts a token owned by
-   itself into the ring, broadcasts the ring via gossip, then responds
-   to the command directly.
-4. However, if another peer has the highest ID, the peer that
-   triggered the election sends a message to the peer it has picked,
-   and waits to hear back. A peer receiving such a message behaves as
-   in step 2, i.e. it re-runs the process, possibly choosing yet
-   another peer and sending it a message requesting it to take over.
-
-Step 4 is designed to cope with peers simultaneously joining the
-network, when information about who has joined has not reached all
-peers yet. By sending a message to the peer we /think/ should be in
-charge, we ensure that the choice is made using the combination of all
-information available to all peers in the network.
-
-If a peer dies just after it has been chosen, then the originating
-peer will not hear back from it. This failure will be detected by the
-underlying Weave peer topology and the dead peer will be removed from
-the set. The originating peer will re-try, re-running the process
-across all connected peers.
-
-Sets of peers that don't know about each other, either because the
-network is partitioned or because they just haven't connected yet,
-will each pick a different leader. This problem seems fundamental.
-
+To bootstrap the initial ring, we use the Paxos algorithm to achieve
+consensus on an initial set of peers and divide the ring equally
+amongst them. Then, other peers can begin to request ranges from the
+initial set. Paxos requires that a 'quorum' of peers agree: the quorum
+size is derived from the set of peers announced at `weave launch`
+time, or set explicitly by the user.
 
 ## Peer shutdown
 
