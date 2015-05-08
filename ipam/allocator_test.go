@@ -57,8 +57,8 @@ func TestAllocFree(t *testing.T) {
 	wt.AssertEqualUint32(t, alloc.spaceSet.NumFreeAddresses(), spaceSize, "Total free addresses")
 }
 
-/*
-func TestElection(t *testing.T) {
+func TestBootstrap(t *testing.T) {
+	common.InitDefaultLogging(true)
 	const (
 		donateSize     = 5
 		donateStart    = "10.0.1.7"
@@ -66,22 +66,18 @@ func TestElection(t *testing.T) {
 		peerNameString = "02:00:00:02:00:00"
 	)
 
-	alloc1 := testAllocator(t, ourNameString, testStart1+"/22")
+	alloc1 := testAllocator(t, ourNameString, testStart1+"/22", 2)
 	defer alloc1.Stop()
 
 	// Simulate another peer on the gossip network
-	alloc2 := testAllocator(t, peerNameString, testStart1+"/22")
+	alloc2 := testAllocator(t, peerNameString, testStart1+"/22", 2)
 	defer alloc2.Stop()
 
-	alloc1.OnGossipBroadcast(alloc2.EncodeState())
-	// At first, this peer has no space, so alloc1 should do nothing
+	alloc1.OnGossipBroadcast(alloc2.encode())
 
 	alloc1.tryPendingOps()
 
-	SetLeader(alloc1, peerNameString)
-	// On receipt of the Allocate, alloc1 should elect alloc2 as leader
-	ExpectMessage(alloc1, peerNameString, msgLeaderElected, nil)
-
+	ExpectBroadcastMessage(alloc1, nil) // alloc1 will try to form consensus
 	done := make(chan bool)
 	go func() {
 		alloc1.Allocate("somecontainer", nil)
@@ -90,29 +86,35 @@ func TestElection(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	AssertNothingSent(t, done)
 
+	CheckAllExpectedMessagesSent(alloc1, alloc2)
+
 	alloc1.tryPendingOps()
 	AssertNothingSent(t, done)
 
-	// alloc2 receives the leader election message and broadcasts its winning state
+	CheckAllExpectedMessagesSent(alloc1, alloc2)
+
+	// alloc2 receives paxos update and broadcasts its reply
 	ExpectBroadcastMessage(alloc2, nil)
-	msg := router.Concat([]byte{msgLeaderElected}, alloc1.EncodeState())
-	alloc2.OnGossipUnicast(alloc1.ourName, msg)
+	alloc2.OnGossipBroadcast(alloc1.encode())
 
-	// On receipt of the broadcast, alloc1 should ask alloc2 for space
-	ExpectMessage(alloc1, peerNameString, msgSpaceRequest, nil)
-	alloc1.OnGossipBroadcast(alloc2.EncodeState())
+	ExpectBroadcastMessage(alloc1, nil)
+	alloc1.OnGossipBroadcast(alloc2.encode())
 
-	// alloc2 receives the space request and replies
-	ExpectMessage(alloc2, ourNameString, msgRingUpdate, nil)
-	alloc2.OnGossipUnicast(alloc1.ourName, router.Concat([]byte{msgSpaceRequest}, alloc1.EncodeState()))
+	// both nodes will get consensus now so initialize the ring
+	ExpectBroadcastMessage(alloc2, nil)
+	ExpectBroadcastMessage(alloc2, nil)
+	alloc2.OnGossipBroadcast(alloc1.encode())
 
-	// Now alloc1 receives the space donation
-	alloc1.OnGossipBroadcast(alloc2.EncodeState())
+	CheckAllExpectedMessagesSent(alloc1, alloc2)
+
+	alloc1.OnGossipBroadcast(alloc2.encode())
+	// now alloc1 should have space
+
 	AssertSent(t, done)
 
 	CheckAllExpectedMessagesSent(alloc1, alloc2)
 }
-*/
+
 func TestAllocatorClaim(t *testing.T) {
 	const (
 		container1 = "abcdef"
