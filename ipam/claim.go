@@ -28,8 +28,8 @@ func (c *claim) Try(alloc *Allocator) bool {
 		return true
 	}
 
-	// If our ring doesn't know, it must be empty.  We will have tried
-	// to do a leader elect, so we wait until we find some owner for this
+	// If our ring doesn't know, it must be empty.  We will have initiated the
+	// bootstrap of the ring, so wait until we find some owner for this
 	// range (might be us).
 	owner := alloc.ring.Owner(c.addr)
 	if owner == router.UnknownPeerName {

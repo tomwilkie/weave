@@ -40,7 +40,6 @@ func toStringArray(messages []mockMessage) []string {
 type mockGossipComms struct {
 	t        *testing.T
 	name     string
-	leader   router.PeerName
 	messages []mockMessage
 }
 
@@ -100,19 +99,6 @@ func (m *mockGossipComms) GossipUnicast(dstPeerName router.PeerName, buf []byte)
 		m.messages = m.messages[1:]
 	}
 	return nil
-}
-
-// Gerrymandering...
-func SetLeader(alloc *Allocator, leader string) {
-	m := alloc.gossip.(*mockGossipComms)
-	m.leader, _ = router.PeerNameFromString(leader)
-}
-
-func (m *mockGossipComms) LeaderElect() router.PeerName {
-	if m.leader == router.UnknownPeerName {
-		m.leader, _ = router.PeerNameFromString(m.name)
-	}
-	return m.leader
 }
 
 func ExpectMessage(alloc *Allocator, dst string, msgType byte, buf []byte) {
@@ -206,16 +192,6 @@ func (grouter *TestGossipRouter) GossipBroadcast(update router.GossipData) error
 	return nil
 }
 
-func (grouter *TestGossipRouter) LeaderElect() router.PeerName {
-	var highest router.PeerName
-	for name := range grouter.gossipChans {
-		if highest < name {
-			highest = name
-		}
-	}
-	return highest
-}
-
 func (grouter *TestGossipRouter) removePeer(peer router.PeerName) {
 	gossipChan := grouter.gossipChans[peer]
 	resultChan := make(chan bool)
@@ -265,10 +241,6 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 
 	grouter.gossipChans[sender] = gossipChan
 	return TestGossipRouterClient{grouter, sender}
-}
-
-func (client TestGossipRouterClient) LeaderElect() router.PeerName {
-	return client.router.LeaderElect()
 }
 
 func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, buf []byte) error {
