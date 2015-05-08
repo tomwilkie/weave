@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/weaveworks/weave/common"
+	"github.com/weaveworks/weave/ipam/paxos"
 	"github.com/weaveworks/weave/ipam/ring"
 	"github.com/weaveworks/weave/ipam/space"
 	"github.com/weaveworks/weave/ipam/utils"
-	"github.com/weaveworks/weave/paxos"
 	"github.com/weaveworks/weave/router"
 )
 
