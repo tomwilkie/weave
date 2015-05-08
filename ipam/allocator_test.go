@@ -32,7 +32,7 @@ func TestAllocFree(t *testing.T) {
 	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
 	defer alloc.Stop()
 
-	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
+	alloc.claimRingForTesting(alloc)
 	addr1 := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
@@ -57,6 +57,7 @@ func TestAllocFree(t *testing.T) {
 	wt.AssertEqualUint32(t, alloc.spaceSet.NumFreeAddresses(), spaceSize, "Total free addresses")
 }
 
+/*
 func TestElection(t *testing.T) {
 	const (
 		donateSize     = 5
@@ -111,7 +112,7 @@ func TestElection(t *testing.T) {
 
 	CheckAllExpectedMessagesSent(alloc1, alloc2)
 }
-
+*/
 func TestAllocatorClaim(t *testing.T) {
 	const (
 		container1 = "abcdef"
@@ -124,7 +125,7 @@ func TestAllocatorClaim(t *testing.T) {
 	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
 	defer alloc.Stop()
 
-	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
+	alloc.claimRingForTesting(alloc)
 	addr1 := alloc.Allocate(container1, nil)
 	alloc.Allocate(container2, nil)
 
@@ -153,10 +154,12 @@ func TestCancel(t *testing.T) {
 	router := TestGossipRouter{make(map[router.PeerName]chan gossipMessage), 0.0}
 
 	alloc1, _ := NewAllocator(peer1Name, CIDR)
-	alloc1.SetInterfaces(router.connect(peer1Name, alloc1), &router)
+	alloc1.SetInterfaces(router.connect(peer1Name, alloc1), nil)
 
 	alloc2, _ := NewAllocator(peer2Name, CIDR)
-	alloc2.SetInterfaces(router.connect(peer2Name, alloc2), &router)
+	alloc2.SetInterfaces(router.connect(peer2Name, alloc2), nil)
+	alloc1.claimRingForTesting(alloc1, alloc2)
+	alloc2.claimRingForTesting(alloc1, alloc2)
 
 	alloc1.Start()
 	alloc2.Start()
@@ -212,7 +215,7 @@ func TestGossipShutdown(t *testing.T) {
 	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
 	defer alloc.Stop()
 
-	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
+	alloc.claimRingForTesting(alloc)
 	addr1 := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
@@ -228,7 +231,7 @@ func TestGossipShutdown(t *testing.T) {
 // Placeholders for test methods that touch the internals of Allocator
 
 func (alloc *Allocator) EncodeState() []byte {
-	return append([]byte{msgRingUpdate}, alloc.ring.GossipState()...)
+	return alloc.ring.GossipState()
 }
 
 // Test we can create three nodes, create ips on two of them, remove those

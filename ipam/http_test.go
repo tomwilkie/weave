@@ -61,7 +61,7 @@ func TestHttp(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond) // Allow for http server to get going
 
-	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
+	alloc.claimRingForTesting()
 	// Ask the http server for a new address
 	cidr1 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	wt.AssertEqualString(t, cidr1, testAddr1+netSuffix, "address")
@@ -128,6 +128,7 @@ func impTestHTTPCancel(t *testing.T) {
 	)
 
 	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
+	alloc.claimRingForTesting(alloc)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("Http test on port", port)
 	go listenHTTP(port, alloc)

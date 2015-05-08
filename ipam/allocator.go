@@ -11,6 +11,7 @@ import (
 	"github.com/weaveworks/weave/ipam/ring"
 	"github.com/weaveworks/weave/ipam/space"
 	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/paxos"
 	"github.com/weaveworks/weave/router"
 )
 
@@ -21,7 +22,6 @@ const (
 // Kinds of message we can unicast to other peers
 const (
 	msgSpaceRequest = iota
-	msgLeaderElected
 	msgRingUpdate
 )
 
@@ -56,7 +56,7 @@ type Allocator struct {
 	pendingAllocates   []operation                // held until we get some free space
 	pendingClaims      []operation                // held until we know who owns the space
 	gossip             router.Gossip              // our link to the outside world for sending messages
-	leadership         router.Leadership
+	paxos              *paxos.Node
 	shuttingDown       bool // to avoid doing any requests while trying to tombstone ourself
 }
 
@@ -120,7 +120,7 @@ func (alloc *Allocator) doOperation(op operation, ops *[]operation) {
 			op.Cancel()
 			return
 		}
-		alloc.electLeaderIfNecessary()
+		alloc.createRingIfNecessary()
 		if !op.Try(alloc) {
 			*ops = append(*ops, op)
 		}
@@ -323,16 +323,6 @@ func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) erro
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
 		switch msg[0] {
-		case msgLeaderElected:
-			// some other peer decided we were the leader:
-			// if we already have tokens then they didn't get the memo; repeat
-			if !alloc.ring.Empty() {
-				alloc.gossip.GossipBroadcast(alloc.Gossip())
-			} else {
-				// re-run the election on this peer to avoid races
-				alloc.electLeaderIfNecessary()
-			}
-			resultChan <- nil
 		case msgSpaceRequest:
 			// some other peer asked us for space
 			alloc.donateSpace(sender)
@@ -349,10 +339,7 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error)
 	alloc.debugln("OnGossipBroadcast:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		switch msg[0] {
-		case msgRingUpdate:
-			resultChan <- alloc.updateRing(msg[1:])
-		}
+		resultChan <- alloc.updateRing(msg)
 	}
 	return alloc.Gossip(), <-resultChan
 }
@@ -371,10 +358,7 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 	alloc.debugln("Allocator.OnGossip:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		switch msg[0] {
-		case msgRingUpdate:
-			resultChan <- alloc.updateRing(msg[1:])
-		}
+		resultChan <- alloc.updateRing(msg)
 	}
 	return nil, <-resultChan // for now, we never propagate updates. TBD
 }
@@ -389,7 +373,7 @@ func (d *ipamGossipData) Merge(other router.GossipData) {
 }
 
 func (d *ipamGossipData) Encode() []byte {
-	return append([]byte{msgRingUpdate}, d.alloc.Encode()...)
+	return d.alloc.Encode()
 }
 
 // Gossip returns a GossipData implementation, which in this case always
@@ -399,9 +383,9 @@ func (alloc *Allocator) Gossip() router.GossipData {
 }
 
 // SetInterfaces gives the allocator two interfaces for talking to the outside world
-func (alloc *Allocator) SetInterfaces(gossip router.Gossip, leadership router.Leadership) {
+func (alloc *Allocator) SetInterfaces(gossip router.Gossip, paxos *paxos.Node) {
 	alloc.gossip = gossip
-	alloc.leadership = leadership
+	alloc.paxos = paxos
 }
 
 // ACTOR server
@@ -445,21 +429,23 @@ func (alloc *Allocator) string() string {
 	return buf.String()
 }
 
-func (alloc *Allocator) electLeaderIfNecessary() {
+func (alloc *Allocator) createRingIfNecessary() {
 	if !alloc.ring.Empty() {
 		return
 	}
-	leader := alloc.leadership.LeaderElect()
-	alloc.debugln("Elected leader:", leader)
-	if leader == alloc.ourName {
-		// I'm the winner; take control of the whole subnet
-		alloc.ring.ClaimItAll()
+	val := alloc.paxos.Consensus()
+	if val == nil {
+		// todo: re-propose after some timeout
+		alloc.debugln("Paxos proposing")
+		alloc.paxos.Propose()
+		val = alloc.paxos.Consensus()
+	}
+	if val != nil {
+		alloc.debugln("Paxos consensus:", val)
+		alloc.ring.ClaimForSet(val)
 		alloc.considerNewSpaces()
-		alloc.infof("I was elected leader \n%s", alloc.string())
 		alloc.gossip.GossipBroadcast(alloc.Gossip())
 		alloc.tryPendingOps()
-	} else {
-		alloc.sendRequest(leader, msgLeaderElected)
 	}
 }
 

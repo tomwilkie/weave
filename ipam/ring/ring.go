@@ -418,18 +418,49 @@ func (r *Ring) OwnedRanges() []Range {
 	return result
 }
 
-// ClaimItAll claims the entire ring for this peer.  Only works for empty rings.
-func (r *Ring) ClaimItAll() {
+// For compatibility with sort.Interface
+type peerNames []router.PeerName
+
+func (a peerNames) Len() int           { return len(a) }
+func (a peerNames) Less(i, j int) bool { return a[i] < a[j] }
+func (a peerNames) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
+// ClaimItAll claims the entire ring for the set of peers passed in.  Only works for empty rings.
+func (r *Ring) ClaimForSet(peerSet map[router.PeerName]struct{}) {
 	utils.Assert(r.Empty())
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
 
-	if e, found := r.Entries.get(r.Start); found {
-		e.update(r.Peername, r.distance(r.Start, r.End))
-	} else {
-		r.Entries.insert(entry{Token: r.Start, Peer: r.Peername,
-			Free: r.distance(r.Start, r.End)})
+	// Copy set into array so we can get a consistent ordering
+	peers := make(peerNames, len(peerSet))
+	i := 0
+	for peer := range peerSet {
+		peers[i] = peer
+		i++
 	}
+	sort.Sort(peers)
+
+	totalSize := r.distance(r.Start, r.End)
+	if uint64(len(peers)) > uint64(totalSize) {
+		peers = peers[:totalSize] // if more peers than IPs then truncate
+	}
+	index := r.Start
+	length := totalSize / uint32(len(peers))
+	for i, peer := range peers {
+		if i == len(peers)-1 { // last one
+			length = totalSize - (index - r.Start)
+		}
+		if e, found := r.Entries.get(index); found {
+			e.update(peer, length)
+		} else {
+			r.Entries.insert(entry{Token: index, Peer: peer, Free: length})
+		}
+		index += length
+	}
+}
+
+func (r *Ring) ClaimItAll() {
+	r.ClaimForSet(map[router.PeerName]struct{}{r.Peername: struct{}{}})
 }
 
 func (r *Ring) FprintWithNicknames(w io.Writer, m map[router.PeerName]string) {
