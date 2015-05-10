@@ -3,15 +3,23 @@ package router
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 )
+
+type PeerUID uint16
+
+func ParsePeerUID(s string) (PeerUID, error) {
+	uid, err := strconv.ParseUint(s, 10, 64)
+	return PeerUID(uid), err
+}
 
 type Peer struct {
 	sync.RWMutex
 	Name          PeerName
 	NameByte      []byte
 	NickName      string
-	UID           uint64
+	UID           PeerUID
 	version       uint64
 	localRefCount uint64
 	connections   map[PeerName]Connection
@@ -19,9 +27,9 @@ type Peer struct {
 
 type ConnectionSet map[Connection]struct{}
 
-func NewPeer(name PeerName, nickName string, uid uint64, version uint64) *Peer {
+func NewPeer(name PeerName, nickName string, uid PeerUID, version uint64) *Peer {
 	if uid == 0 {
-		uid = randUint64()
+		uid = PeerUID(randUint64())
 	}
 	return &Peer{
 		Name:        name,

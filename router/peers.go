@@ -306,7 +306,7 @@ func (peer *Peer) encode(enc *gob.Encoder) {
 	checkFatal(enc.Encode(connsBuf.Bytes()))
 }
 
-func decodePeerNoConns(dec *gob.Decoder) (nameByte []byte, nickName string, uid uint64, version uint64, conns []byte, err error) {
+func decodePeerNoConns(dec *gob.Decoder) (nameByte []byte, nickName string, uid PeerUID, version uint64, conns []byte, err error) {
 	if err = dec.Decode(&nameByte); err != nil {
 		return
 	}

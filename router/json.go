@@ -72,7 +72,7 @@ func (peer *Peer) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Name        string
 		NickName    string
-		UID         uint64
+		UID         PeerUID
 		Version     uint64
 		Connections []Connection
 	}{peer.Name.String(), peer.NickName, peer.UID, peer.version, connections})
