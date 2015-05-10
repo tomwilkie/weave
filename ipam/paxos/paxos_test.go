@@ -33,6 +33,7 @@ type Link struct {
 }
 
 type Model struct {
+	t          *testing.T
 	quorum     uint
 	nodes      []TestNode
 	readyLinks []*Link
@@ -83,8 +84,9 @@ type TestParams struct {
 }
 
 // Make a network of nodes with random topology
-func makeRandomModel(params *TestParams, r *rand.Rand) *Model {
+func makeRandomModel(params *TestParams, r *rand.Rand, t *testing.T) *Model {
 	m := Model{
+		t:          t,
 		quorum:     params.nodeCount/2 + 1,
 		nodes:      make([]TestNode, params.nodeCount),
 		readyLinks: []*Link{},
@@ -224,7 +226,7 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		i := r.Intn(len(m.readyLinks))
 		link := m.readyLinks[i]
 		if link.ready != i {
-			panic("Link in readyLinks was not ready")
+			m.t.Fatal("Link in readyLinks was not ready")
 		}
 
 		// gossip across link
@@ -294,18 +296,18 @@ func (m *Model) validate() {
 		ok, val := m.nodes[i].consensus()
 		if !ok {
 			//m.dump()
-			panic("Node doesn't know about consensus")
+			m.t.Fatal("Node doesn't know about consensus")
 		}
 
 		if m.nodes[i].firstConsensus.Origin != val.Origin {
 			//m.dump()
-			panic("Consensus mismatch")
+			m.t.Fatal("Consensus mismatch")
 		}
 
 		if i == 0 {
 			origin = val.Origin
 		} else if val.Origin != origin {
-			panic("Node disagrees about consensus")
+			m.t.Fatal("Node disagrees about consensus")
 		}
 	}
 }
@@ -332,14 +334,14 @@ func TestPaxos(t *testing.T) {
 	}
 
 	for i := 0; i < 1000; i++ {
-		m := makeRandomModel(&params, r)
+		m := makeRandomModel(&params, r, t)
 
 		if !m.simulate(&params, r) {
-			panic("Failed to converge")
+			m.t.Fatal("Failed to converge")
 		}
 
 		m.validate()
 	}
 
-	fmt.Println("Done")
+	t.Log("Done")
 }
