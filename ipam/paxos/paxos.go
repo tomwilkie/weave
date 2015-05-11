@@ -5,25 +5,41 @@ import (
 	"github.com/weaveworks/weave/router"
 )
 
+// The node identifier.  The use of the UID here is important: Paxos
+// acceptors must not forget their promises, so it's important that a
+// node does not restart and lose its Paxos state but claim to have
+// the same ID.
+type NodeID struct {
+	Name router.PeerName
+	UID  router.PeerUID
+}
+
 // note all fields exported in structs so we can Gob them
 type ProposalID struct {
 	// round numbers begin at 1.  round 0 indicates an
 	// uninitialized ProposalID, and precedes all other ProposalIDs
 	Round    uint
-	Proposer router.PeerName
+	Proposer NodeID
 }
 
 func (a ProposalID) precedes(b ProposalID) bool {
-	return a.Round < b.Round ||
-		(a.Round == b.Round && a.Proposer < b.Proposer)
+	if a.Round != b.Round {
+		return a.Round < b.Round
+	} else if a.Proposer.Name != b.Proposer.Name {
+		return a.Proposer.Name < b.Proposer.Name
+	} else if a.Proposer.UID != b.Proposer.UID {
+		return a.Proposer.UID < b.Proposer.UID
+	} else {
+		return false
+	}
 }
 
 func (a ProposalID) valid() bool {
 	return a.Round > 0
 }
 
-// For seeding IPAM, the value we want consensus on is a set of nodes
-type Value map[router.PeerName]struct{}
+// For seeding IPAM, the value we want consensus on is a set of peer names
+type Value []router.PeerName
 
 // An AcceptedValue is a Value plus the proposal which originated that
 // Value.  The origin is not essential, but makes comparing
@@ -48,18 +64,18 @@ func (a NodeClaims) equals(b NodeClaims) bool {
 		a.AcceptedVal.Origin == b.AcceptedVal.Origin
 }
 
-type GossipState map[router.PeerName]NodeClaims
+type GossipState map[NodeID]NodeClaims
 
 type Node struct {
-	id     router.PeerName
+	id     NodeID
 	quorum uint
 	knows  GossipState
 }
 
-func (node *Node) Init(id router.PeerName, quorum uint) {
-	node.id = id
+func (node *Node) Init(name router.PeerName, uid router.PeerUID, quorum uint) {
+	node.id = NodeID{name, uid}
 	node.quorum = quorum
-	node.knows = map[router.PeerName]NodeClaims{}
+	node.knows = map[NodeID]NodeClaims{}
 }
 
 func (node *Node) GossipState() GossipState {
@@ -196,16 +212,16 @@ func (node *Node) Think() bool {
 	return true
 }
 
-// When we get to pick a value, we use the set of nodes we know about.
-// This is not necessarily all nodes, but it is at least a quorum, and
-// so good enough for seeding the ring.
+// When we get to pick a value, we use the set of peer names we know
+// about.  This is not necessarily all peer names, but it is at least
+// a quorum, and so good enough for seeding the ring.
 func (node *Node) pickValue() Value {
-	val := Value{}
-
+	val := make([]router.PeerName, len(node.knows))
+	i := 0
 	for id := range node.knows {
-		val[id] = struct{}{}
+		val[i] = id.Name
+		i++
 	}
-
 	return val
 }
 
@@ -229,7 +245,7 @@ func (node *Node) consensus() (bool, AcceptedValue) {
 
 // Consensus for public consumption - return just the map, which will
 // be nil if no consensus
-func (node *Node) Consensus() map[router.PeerName]struct{} {
+func (node *Node) Consensus() []router.PeerName {
 	_, val := node.consensus()
 	return val.Value
 }

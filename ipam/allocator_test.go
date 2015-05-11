@@ -150,16 +150,14 @@ func TestCancel(t *testing.T) {
 	const (
 		CIDR = "10.0.1.7/26"
 	)
-	peer1Name, _ := router.PeerNameFromString("01:00:00:02:00:00")
-	peer2Name, _ := router.PeerNameFromString("02:00:00:02:00:00")
 
 	router := TestGossipRouter{make(map[router.PeerName]chan gossipMessage), 0.0}
 
-	alloc1, _ := NewAllocator(peer1Name, CIDR, 2)
-	alloc1.SetInterfaces(router.connect(peer1Name, alloc1))
+	alloc1 := makeAllocator("01:00:00:02:00:00", CIDR, 2)
+	alloc1.SetInterfaces(router.connect(alloc1.ourName, alloc1))
 
-	alloc2, _ := NewAllocator(peer2Name, CIDR, 2)
-	alloc2.SetInterfaces(router.connect(peer2Name, alloc2))
+	alloc2 := makeAllocator("02:00:00:02:00:00", CIDR, 2)
+	alloc2.SetInterfaces(router.connect(alloc2.ourName, alloc2))
 	alloc1.claimRingForTesting(alloc1, alloc2)
 	alloc2.claimRingForTesting(alloc1, alloc2)
 

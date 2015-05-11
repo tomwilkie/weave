@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"time"
 
 	"github.com/weaveworks/weave/common"
@@ -61,7 +62,7 @@ type Allocator struct {
 }
 
 // NewAllocator creates and initialises a new Allocator
-func NewAllocator(ourName router.PeerName, subnetCIDR string, quorum uint) (*Allocator, error) {
+func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, subnetCIDR string, quorum uint) (*Allocator, error) {
 	_, subnet, err := net.ParseCIDR(subnetCIDR)
 	if err != nil {
 		return nil, err
@@ -87,7 +88,7 @@ func NewAllocator(ourName router.PeerName, subnetCIDR string, quorum uint) (*All
 		owned:              make(map[string]net.IP),
 		otherPeerNicknames: make(map[router.PeerName]string),
 	}
-	alloc.paxos.Init(ourName, quorum)
+	alloc.paxos.Init(ourName, ourUID, quorum)
 	return alloc, nil
 }
 
@@ -474,11 +475,41 @@ func (alloc *Allocator) createRingIfConsensus() {
 				alloc.paxosTicker.Stop()
 				alloc.paxosTicker = nil
 			}
-			alloc.ring.ClaimForSet(val)
+			alloc.ring.ClaimForPeers(normalizeConsensus(val))
 			alloc.considerNewSpaces()
 			alloc.gossip.GossipBroadcast(alloc.Gossip())
 			alloc.tryPendingOps()
 		}
+	}
+}
+
+// For compatibility with sort.Interface
+type peerNames []router.PeerName
+
+func (a peerNames) Len() int           { return len(a) }
+func (a peerNames) Less(i, j int) bool { return a[i] < a[j] }
+func (a peerNames) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
+// When we get a consensus from Paxos, the peer names are not in a
+// defined order and may contain duplicates.  This function sorts them
+// and de-dupes.
+func normalizeConsensus(consensus []router.PeerName) []router.PeerName {
+	if len(consensus) == 0 {
+		return nil
+	} else {
+		peers := make(peerNames, len(consensus))
+		copy(peers, consensus)
+		sort.Sort(peers)
+
+		dst := 0
+		for src := 1; src < len(peers); src++ {
+			if peers[dst] != peers[src] {
+				dst++
+				peers[dst] = peers[src]
+			}
+		}
+
+		return peers[:dst+1]
 	}
 }
 

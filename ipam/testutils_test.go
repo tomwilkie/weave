@@ -121,9 +121,23 @@ func CheckAllExpectedMessagesSent(allocs ...*Allocator) {
 	}
 }
 
+func makeAllocator(name string, cidr string, quorum uint) *Allocator {
+	peername, err := router.PeerNameFromString(name)
+	if err != nil {
+		panic(err)
+	}
+
+	alloc, err := NewAllocator(peername, router.PeerUID(rand.Int63()), cidr,
+		quorum)
+	if err != nil {
+		panic(err)
+	}
+
+	return alloc
+}
+
 func testAllocator(t *testing.T, name string, universeCIDR string, quorum uint) *Allocator {
-	ourName, _ := router.PeerNameFromString(name)
-	alloc, _ := NewAllocator(ourName, universeCIDR, quorum)
+	alloc := makeAllocator(name, universeCIDR, quorum)
 	gossip := &mockGossipComms{t: t, name: name}
 	alloc.SetInterfaces(gossip)
 	alloc.Start()
@@ -131,12 +145,11 @@ func testAllocator(t *testing.T, name string, universeCIDR string, quorum uint) 
 }
 
 func (alloc *Allocator) claimRingForTesting(allocs ...*Allocator) {
-	set := make(map[router.PeerName]struct{})
-	set[alloc.ourName] = struct{}{}
+	peers := []router.PeerName{alloc.ourName}
 	for _, alloc2 := range allocs {
-		set[alloc2.ourName] = struct{}{}
+		peers = append(peers, alloc2.ourName)
 	}
-	alloc.ring.ClaimForSet(set)
+	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
 	alloc.considerNewSpaces()
 }
 
@@ -262,11 +275,9 @@ func makeNetworkOfAllocators(size int, cidr string) ([]*Allocator, TestGossipRou
 	allocs := make([]*Allocator, size)
 
 	for i := 0; i < size; i++ {
-		peerNameStr := fmt.Sprintf("%02d:00:00:02:00:00", i)
-		peerName, _ := router.PeerNameFromString(peerNameStr)
-		alloc, _ := NewAllocator(peerName, cidr, uint(size/2+1))
-		gossip := gossipRouter.connect(peerName, alloc)
-		alloc.SetInterfaces(gossip)
+		alloc := makeAllocator(fmt.Sprintf("%02d:00:00:02:00:00", i),
+			cidr, uint(size/2+1))
+		alloc.SetInterfaces(gossipRouter.connect(alloc.ourName, alloc))
 		alloc.Start()
 		allocs[i] = alloc
 	}

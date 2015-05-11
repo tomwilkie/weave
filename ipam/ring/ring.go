@@ -368,27 +368,12 @@ func (r *Ring) OwnedRanges() []Range {
 	return result
 }
 
-// For compatibility with sort.Interface
-type peerNames []router.PeerName
-
-func (a peerNames) Len() int           { return len(a) }
-func (a peerNames) Less(i, j int) bool { return a[i] < a[j] }
-func (a peerNames) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
-// ClaimItAll claims the entire ring for the set of peers passed in.  Only works for empty rings.
-func (r *Ring) ClaimForSet(peerSet map[router.PeerName]struct{}) {
+// ClaimForPeers claims the entire ring for the array of peers passed
+// in.  Only works for empty rings.
+func (r *Ring) ClaimForPeers(peers []router.PeerName) {
 	utils.Assert(r.Empty())
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
-
-	// Copy set into array so we can get a consistent ordering
-	peers := make(peerNames, len(peerSet))
-	i := 0
-	for peer := range peerSet {
-		peers[i] = peer
-		i++
-	}
-	sort.Sort(peers)
 
 	totalSize := r.distance(r.Start, r.End)
 	if uint64(len(peers)) > uint64(totalSize) {
@@ -410,7 +395,7 @@ func (r *Ring) ClaimForSet(peerSet map[router.PeerName]struct{}) {
 }
 
 func (r *Ring) ClaimItAll() {
-	r.ClaimForSet(map[router.PeerName]struct{}{r.Peername: struct{}{}})
+	r.ClaimForPeers([]router.PeerName{r.Peername})
 }
 
 func (r *Ring) FprintWithNicknames(w io.Writer, m map[router.PeerName]string) {

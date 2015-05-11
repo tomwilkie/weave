@@ -34,6 +34,7 @@ type Link struct {
 
 type Model struct {
 	t          *testing.T
+	r          *rand.Rand
 	quorum     uint
 	nodes      []TestNode
 	readyLinks []*Link
@@ -87,6 +88,7 @@ type TestParams struct {
 func makeRandomModel(params *TestParams, r *rand.Rand, t *testing.T) *Model {
 	m := Model{
 		t:          t,
+		r:          r,
 		quorum:     params.nodeCount/2 + 1,
 		nodes:      make([]TestNode, params.nodeCount),
 		readyLinks: []*Link{},
@@ -94,7 +96,8 @@ func makeRandomModel(params *TestParams, r *rand.Rand, t *testing.T) *Model {
 	}
 
 	for i := range m.nodes {
-		m.nodes[i].Init(router.PeerName(i+1), m.quorum)
+		m.nodes[i].Init(router.PeerName(i+1), router.PeerUID(r.Int63()),
+			m.quorum)
 		m.nodes[i].Propose()
 	}
 
@@ -168,7 +171,8 @@ func (m *Model) isolateNode(node *TestNode) {
 
 // Restart a node
 func (m *Model) restart(node *TestNode) {
-	node.Init(router.PeerName(m.nextID), m.quorum)
+	node.Init(router.PeerName(m.nextID), router.PeerUID(m.r.Int63()),
+		m.quorum)
 	m.nextID++
 	node.Propose()
 
@@ -188,16 +192,16 @@ func (m *Model) restart(node *TestNode) {
 	node.firstConsensus = AcceptedValue{}
 }
 
-func (m *Model) pickNode(r *rand.Rand) *TestNode {
+func (m *Model) pickNode() *TestNode {
 	for {
-		node := &m.nodes[r.Intn(len(m.nodes))]
+		node := &m.nodes[m.r.Intn(len(m.nodes))]
 		if !node.isolated {
 			return node
 		}
 	}
 }
 
-func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
+func (m *Model) simulate(params *TestParams) bool {
 	nodesLeft := uint(len(m.nodes))
 	restarts := uint(0)
 
@@ -217,13 +221,13 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 				}
 			}
 
-			node := m.pickNode(r)
+			node := m.pickNode()
 			node.Propose()
 			m.nodeChanged(node)
 		}
 
 		// Pick a ready link at random
-		i := r.Intn(len(m.readyLinks))
+		i := m.r.Intn(len(m.readyLinks))
 		link := m.readyLinks[i]
 		if link.ready != i {
 			m.t.Fatal("Link in readyLinks was not ready")
@@ -247,29 +251,29 @@ func (m *Model) simulate(params *TestParams, r *rand.Rand) bool {
 		m.unreadyLink(link)
 
 		// Re-propose?
-		if r.Float32() < params.reproposeProb {
-			node := m.pickNode(r)
+		if m.r.Float32() < params.reproposeProb {
+			node := m.pickNode()
 			node.Propose()
 			m.nodeChanged(node)
 		}
 
 		// Isolate?
-		if nodesLeft > m.quorum && r.Float32() < params.isolateProb {
-			m.isolateNode(m.pickNode(r))
+		if nodesLeft > m.quorum && m.r.Float32() < params.isolateProb {
+			m.isolateNode(m.pickNode())
 			nodesLeft--
 
 			// We isolated a node, so get another node to
 			// re-propose.  In reality the lack of
 			// consensus would be detected via a timeout
-			node := m.pickNode(r)
+			node := m.pickNode()
 			node.Propose()
 			m.nodeChanged(node)
 		}
 
 		// Restart?
-		if restarts < m.quorum && r.Float32() < params.restartProb {
+		if restarts < m.quorum && m.r.Float32() < params.restartProb {
 			restarts++
-			node := m.pickNode(r)
+			node := m.pickNode()
 			m.restart(node)
 			m.nodeChanged(node)
 		}
@@ -336,7 +340,7 @@ func TestPaxos(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		m := makeRandomModel(&params, r, t)
 
-		if !m.simulate(&params, r) {
+		if !m.simulate(&params) {
 			m.t.Fatal("Failed to converge")
 		}
 
