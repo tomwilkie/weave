@@ -429,22 +429,26 @@ func (alloc *Allocator) string() string {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "Allocator subnet %s+%d\n", alloc.subnetStart, alloc.subnetSize)
 
-	localFreeSpace := alloc.spaceSet.NumFreeAddresses()
-	remoteFreeSpace := alloc.ring.TotalRemoteFree()
-	percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(alloc.subnetSize)
-	fmt.Fprintf(&buf, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
-		percentFree, localFreeSpace, remoteFreeSpace)
+	if alloc.ring.Empty() {
+		fmt.Fprintf(&buf, "Paxos: %s", alloc.paxos.String())
+	} else {
+		localFreeSpace := alloc.spaceSet.NumFreeAddresses()
+		remoteFreeSpace := alloc.ring.TotalRemoteFree()
+		percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(alloc.subnetSize)
+		fmt.Fprintf(&buf, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
+			percentFree, localFreeSpace, remoteFreeSpace)
 
-	alloc.ring.FprintWithNicknames(&buf, alloc.otherPeerNicknames)
-	fmt.Fprintf(&buf, alloc.spaceSet.String())
-	if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
-		fmt.Fprintf(&buf, "\nPending requests for ")
-	}
-	for _, op := range alloc.pendingAllocates {
-		fmt.Fprintf(&buf, "%s, ", op.String())
-	}
-	for _, op := range alloc.pendingClaims {
-		fmt.Fprintf(&buf, "%s, ", op.String())
+		alloc.ring.FprintWithNicknames(&buf, alloc.otherPeerNicknames)
+		fmt.Fprintf(&buf, alloc.spaceSet.String())
+		if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
+			fmt.Fprintf(&buf, "\nPending requests for ")
+		}
+		for _, op := range alloc.pendingAllocates {
+			fmt.Fprintf(&buf, "%s, ", op.String())
+		}
+		for _, op := range alloc.pendingClaims {
+			fmt.Fprintf(&buf, "%s, ", op.String())
+		}
 	}
 	return buf.String()
 }

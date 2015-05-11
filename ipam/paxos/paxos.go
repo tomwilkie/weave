@@ -1,6 +1,7 @@
 package paxos
 
 import (
+	"fmt"
 	"github.com/weaveworks/weave/router"
 )
 
@@ -231,4 +232,12 @@ func (node *Node) consensus() (bool, AcceptedValue) {
 func (node *Node) Consensus() map[router.PeerName]struct{} {
 	_, val := node.consensus()
 	return val.Value
+}
+
+func (node *Node) String() string {
+	if ok, val := node.consensus(); ok {
+		return fmt.Sprintf("Consensus reached with size %d", len(val.Value))
+	} else {
+		return fmt.Sprintf("Nodes known: %d, Quorum size: %d", len(node.knows), node.quorum)
+	}
 }
