@@ -15,6 +15,10 @@ func panicOnError(err error) {
 	}
 }
 
+func ParseIP(s string) Address {
+	return IP4Address(net.ParseIP(s))
+}
+
 // IP4Address converts an ipv4 address to our integer address type
 func IP4Address(ip4 net.IP) (r Address) {
 	for _, b := range ip4.To4() {
@@ -34,21 +38,17 @@ func AddressIP4(key Address) (r net.IP) {
 	return
 }
 
-// Add - convert to 32-bit unsigned integer, add, and convert back
-func Add(addr net.IP, i Offset) net.IP {
-	sum := IP4Address(addr) + Address(i)
-	return AddressIP4(sum)
+func (addr Address) String() string {
+	return AddressIP4(addr).String()
 }
 
-// Subtract - convert to 32-bit unsigned integer, subtract b from a
-func Subtract(a, b net.IP) Offset {
-	Assert(GE(a, b))
-	return Offset(IP4Address(a) - IP4Address(b))
+func Add(addr Address, i Offset) Address {
+	return addr + Address(i)
 }
 
-// GE - return true if a is greater than or equal to b
-func GE(a, b net.IP) bool {
-	return IP4Address(a) >= IP4Address(b)
+func Subtract(a, b Address) Offset {
+	Assert(a >= b)
+	return Offset(a - b)
 }
 
 // Assert test is true, panic otherwise

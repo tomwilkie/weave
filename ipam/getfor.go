@@ -2,11 +2,16 @@ package ipam
 
 import (
 	"fmt"
-	"net"
+	"github.com/weaveworks/weave/ipam/utils"
 )
 
+type allocateResult struct {
+	ok   bool
+	addr utils.Address
+}
+
 type allocate struct {
-	resultChan       chan<- net.IP
+	resultChan       chan<- allocateResult
 	hasBeenCancelled func() bool
 	ident            string
 }
@@ -20,14 +25,14 @@ func (g *allocate) Try(alloc *Allocator) bool {
 
 	// If we have previously stored an address for this container, return it.
 	if addr, found := alloc.owned[g.ident]; found {
-		g.resultChan <- addr
+		g.resultChan <- allocateResult{true, addr}
 		return true
 	}
 
-	if addr := alloc.spaceSet.Allocate(); addr != nil {
+	if ok, addr := alloc.spaceSet.Allocate(); ok {
 		alloc.debugln("Allocated", addr, "for", g.ident)
 		alloc.addOwned(g.ident, addr)
-		g.resultChan <- addr
+		g.resultChan <- allocateResult{true, addr}
 		return true
 	}
 
@@ -41,7 +46,7 @@ func (g *allocate) Try(alloc *Allocator) bool {
 }
 
 func (g *allocate) Cancel() {
-	g.resultChan <- nil
+	g.resultChan <- allocateResult{false, 0}
 }
 
 func (g *allocate) String() string {

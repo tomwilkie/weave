@@ -2,8 +2,8 @@ package ipam
 
 import (
 	"fmt"
-	"net"
 
+	"github.com/weaveworks/weave/ipam/utils"
 	"github.com/weaveworks/weave/router"
 )
 
@@ -11,7 +11,7 @@ type claim struct {
 	resultChan       chan<- error
 	hasBeenCancelled func() bool
 	ident            string
-	addr             net.IP
+	addr             utils.Address
 }
 
 // Try returns true for success (or failure), false if we need to try again later
@@ -37,7 +37,7 @@ func (c *claim) Try(alloc *Allocator) bool {
 		return false
 	}
 	if owner != alloc.ourName {
-		c.resultChan <- fmt.Errorf("Address %s is owned by other peer %s", c.addr, owner)
+		c.resultChan <- fmt.Errorf("Address %s is owned by other peer %s", c.addr.String(), owner)
 		return true
 	}
 	// We are the owner, check we haven't given it to another container
@@ -58,7 +58,7 @@ func (c *claim) Try(alloc *Allocator) bool {
 		return true
 	}
 	// Addr already owned by container on this machine
-	c.resultChan <- fmt.Errorf("Claimed address %s is already owned by %s", c.addr, existingIdent)
+	c.resultChan <- fmt.Errorf("Claimed address %s is already owned by %s", c.addr.String(), existingIdent)
 	return true
 }
 
@@ -67,7 +67,7 @@ func (c *claim) Cancel() {
 }
 
 func (c *claim) String() string {
-	return fmt.Sprintf("Claim %s -> %s", c.ident, c.addr)
+	return fmt.Sprintf("Claim %s -> %s", c.ident, c.addr.String())
 }
 
 func (c *claim) ForContainer(ident string) bool {

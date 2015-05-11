@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/weaveworks/weave/common"
+	"github.com/weaveworks/weave/ipam/utils"
 )
 
 /*
@@ -67,15 +68,15 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 				badRequest(w, err)
 			} else if ip := net.ParseIP(ipStr); ip == nil {
 				invalidIP(w, ipStr)
-			} else if err = alloc.Claim(ident, ip, closedChan); err != nil {
+			} else if err = alloc.Claim(ident, utils.IP4Address(ip), closedChan); err != nil {
 				badRequest(w, fmt.Errorf("Unable to claim IP address %s: %s", ip, err))
 			}
 		case "POST": // caller requests one address for a container
 			ident, err := parseURL(r.URL.Path)
 			if err != nil {
 				badRequest(w, err)
-			} else if newAddr := alloc.Allocate(ident, closedChan); newAddr != nil {
-				fmt.Fprintf(w, "%s/%d", newAddr, alloc.prefixLen)
+			} else if ok, newAddr := alloc.Allocate(ident, closedChan); ok {
+				fmt.Fprintf(w, "%s/%d", newAddr.String(), alloc.prefixLen)
 			} else {
 				badRequest(w, fmt.Errorf("Allocator shutting down"))
 			}

@@ -3,7 +3,6 @@ package space
 import (
 	"bytes"
 	"fmt"
-	"net"
 	"sort"
 
 	lg "github.com/weaveworks/weave/common"
@@ -16,11 +15,9 @@ type Set struct {
 }
 
 // For compatibility with sort
-func (s Set) Len() int { return len(s.spaces) }
-func (s Set) Less(i, j int) bool {
-	return utils.IP4Address(s.spaces[i].Start) < utils.IP4Address(s.spaces[j].Start)
-}
-func (s Set) Swap(i, j int) { panic("Should never be swapping spaces!") }
+func (s Set) Len() int           { return len(s.spaces) }
+func (s Set) Less(i, j int) bool { return s.spaces[i].Start < s.spaces[j].Start }
+func (s Set) Swap(i, j int)      { panic("Should never be swapping spaces!") }
 
 // Spaces returns the list of spaces in this space set.
 func (s *Set) Spaces() []*Space {
@@ -53,7 +50,7 @@ func (s *Set) AddSpace(newspace *Space) {
 	defer s.assertInvariants()
 
 	i := s.find(newspace.Start)
-	utils.Assert(i == len(s.spaces) || !s.spaces[i].Start.Equal(newspace.Start))
+	utils.Assert(i == len(s.spaces) || s.spaces[i].Start != newspace.Start)
 
 	s.spaces = append(s.spaces, &Space{}) // make space
 	copy(s.spaces[i+1:], s.spaces[i:])    // move up
@@ -66,16 +63,16 @@ func (s *Set) Clear() {
 }
 
 // Return the position of the space at or above start
-func (s *Set) find(start net.IP) int {
+func (s *Set) find(start utils.Address) int {
 	return sort.Search(len(s.spaces), func(j int) bool {
-		return utils.IP4Address(s.spaces[j].Start) >= utils.IP4Address(start)
+		return s.spaces[j].Start >= start
 	})
 }
 
 // Get returns the space found at start.
-func (s *Set) Get(start net.IP) (*Space, bool) {
+func (s *Set) Get(start utils.Address) (*Space, bool) {
 	i := s.find(start)
-	if i < len(s.spaces) && s.spaces[i].Start.Equal(start) {
+	if i < len(s.spaces) && s.spaces[i].Start == start {
 		return s.spaces[i], true
 	}
 	return nil, false
@@ -94,7 +91,7 @@ func (s *Set) NumFreeAddresses() utils.Offset {
 
 // GiveUpSpace returns some large reasonably-sized chunk of free space.
 // Normally because one of our peers has asked for it.
-func (s *Set) GiveUpSpace() (net.IP, utils.Offset, bool) {
+func (s *Set) GiveUpSpace() (utils.Address, utils.Offset, bool) {
 	s.assertInvariants()
 	defer s.assertInvariants()
 
@@ -106,12 +103,12 @@ func (s *Set) GiveUpSpace() (net.IP, utils.Offset, bool) {
 	}
 
 	// First find the biggest free chunk amongst all our spaces
-	var bestStart net.IP
+	var bestStart utils.Address
 	var bestSize utils.Offset
 	var spaceIndex int
 	for j, space := range s.spaces {
 		chunkStart, chunkSize := space.BiggestFreeChunk()
-		if chunkStart == nil || chunkSize < bestSize {
+		if chunkSize < bestSize {
 			continue
 		}
 
@@ -119,9 +116,9 @@ func (s *Set) GiveUpSpace() (net.IP, utils.Offset, bool) {
 		spaceIndex = j
 	}
 
-	if bestStart == nil {
+	if bestSize == 0 {
 		utils.Assert(totalFreeAddresses == 0)
-		return nil, 0, false
+		return 0, 0, false
 	}
 
 	if bestSize > maxDonation {
@@ -163,30 +160,30 @@ func (s *Set) GiveUpSpace() (net.IP, utils.Offset, bool) {
 
 // Allocate calls allocate on each Space this set owns, until
 // it gets an address.
-func (s *Set) Allocate() net.IP {
+func (s *Set) Allocate() (bool, utils.Address) {
 	// TODO: Optimize; perhaps cache last-used space
 	for _, space := range s.spaces {
-		if ret := space.Allocate(); ret != nil {
-			return ret
+		if ok, ret := space.Allocate(); ok {
+			return ok, ret
 		}
 	}
-	return nil
+	return false, 0
 }
 
 // Free returns the provided address to the
 // Space that owns it.
-func (s *Set) Free(addr net.IP) error {
+func (s *Set) Free(addr utils.Address) error {
 	for _, space := range s.spaces {
 		if space.contains(addr) {
 			return space.Free(addr)
 		}
 	}
 	lg.Debug.Println("Address", addr, "not in range", s)
-	return fmt.Errorf("IP %s address not in range", addr)
+	return fmt.Errorf("IP %s address not in range", addr.String())
 }
 
 // Claim an address that we think we should own
-func (s *Set) Claim(addr net.IP) error {
+func (s *Set) Claim(addr utils.Address) error {
 	for _, space := range s.spaces {
 		if done, err := space.Claim(addr); err != nil {
 			return err
@@ -194,5 +191,5 @@ func (s *Set) Claim(addr net.IP) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("IP %s address not in range", addr)
+	return fmt.Errorf("IP %s address not in range", addr.String())
 }

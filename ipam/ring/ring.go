@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net"
 	"sort"
 	"time"
 
@@ -93,8 +92,7 @@ func (r *Ring) checkInvariants() error {
 }
 
 // New creates an empty ring belonging to peer.
-func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
-	start, end := utils.IP4Address(startIP), utils.IP4Address(endIP)
+func New(start, end utils.Address, peer router.PeerName) *Ring {
 	utils.Assert(start < end)
 
 	ring := &Ring{Start: start, End: end, Peername: peer, Entries: make([]*entry, 0)}
@@ -128,16 +126,13 @@ func (r *Ring) distance(start, end utils.Address) utils.Offset {
 // is assigned to peer.  This may insert up to two new tokens.
 // Note, due to wrapping, end can be less than start
 // Preconditions:
-// - startIP < endIP
+// - start < end
 // - [start, end) must be owned by the calling peer
 // - there must not be any live tokens in the range
-func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
+func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) {
 	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, startIP, endIP, peer)
 
-	var (
-		start, end = utils.IP4Address(startIP), utils.IP4Address(endIP)
-		length     = r.distance(start, end)
-	)
+	var length = r.distance(start, end)
 
 	r.assertInvariants()
 	defer r.assertInvariants()
@@ -321,7 +316,7 @@ func (r *Ring) Empty() bool {
 // Range is the return type for OwnedRanges.
 // NB will never have End < Start
 type Range struct {
-	Start, End net.IP // [Start, End) of range I own
+	Start, End utils.Address // [Start, End) of range I own
 }
 
 // OwnedRanges returns slice of Ranges, ordered by IP, indicating which
@@ -346,22 +341,18 @@ func (r *Ring) OwnedRanges() []Range {
 		case nextEntry.Token == r.Start:
 			// be careful here; if end token == start (ie last)
 			// entry on ring, we want to actually use r.End
-			result = append(result, Range{Start: utils.AddressIP4(entry.Token),
-				End: utils.AddressIP4(r.End)})
+			result = append(result, Range{Start: entry.Token, End: r.End})
 
 		case nextEntry.Token <= entry.Token:
 			// We wrapped; want to split around 0
 			// First shuffle everything up as we want results to be sorted
 			result = append(result, Range{})
 			copy(result[1:], result[:len(result)-1])
-			result[0] = Range{Start: utils.AddressIP4(r.Start),
-				End: utils.AddressIP4(nextEntry.Token)}
-			result = append(result, Range{Start: utils.AddressIP4(entry.Token),
-				End: utils.AddressIP4(r.End)})
+			result[0] = Range{Start: r.Start, End: nextEntry.Token}
+			result = append(result, Range{Start: entry.Token, End: r.End})
 
 		default:
-			result = append(result, Range{Start: utils.AddressIP4(entry.Token),
-				End: utils.AddressIP4(nextEntry.Token)})
+			result = append(result, Range{Start: entry.Token, End: nextEntry.Token})
 		}
 	}
 
@@ -541,14 +532,12 @@ func (r *Ring) Transfer(from, to router.PeerName) error {
 }
 
 // Contains returns true if addr is in this ring
-func (r *Ring) Contains(addr net.IP) bool {
-	pos := utils.IP4Address(addr)
-	return pos >= r.Start && pos < r.End
+func (r *Ring) Contains(addr utils.Address) bool {
+	return addr >= r.Start && addr < r.End
 }
 
 // Owner returns the peername which owns the range containing addr
-func (r *Ring) Owner(addr net.IP) router.PeerName {
-	token := utils.IP4Address(addr)
+func (r *Ring) Owner(token utils.Address) router.PeerName {
 	utils.Assert(r.Start <= token && token < r.End)
 
 	r.assertInvariants()

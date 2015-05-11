@@ -1,7 +1,6 @@
 package space
 
 import (
-	"net"
 	"testing"
 
 	"github.com/weaveworks/weave/common"
@@ -10,8 +9,7 @@ import (
 )
 
 func equal(ms1 *Space, ms2 *Space) bool {
-	return ms1.Start.Equal(ms2.Start) &&
-		ms1.Size == ms2.Size
+	return ms1.Start == ms2.Start && ms1.Size == ms2.Size
 }
 
 // Note: does not check version
@@ -42,7 +40,7 @@ func TestGiveUpSimple(t *testing.T) {
 	)
 
 	var (
-		ipAddr1 = net.ParseIP(testAddr1)
+		ipAddr1 = utils.ParseIP(testAddr1)
 	)
 
 	ps1 := spaceSetWith(&Space{Start: ipAddr1, Size: 48})
@@ -70,15 +68,15 @@ func TestGiveUpSimple(t *testing.T) {
 func TestGiveUpHard(t *testing.T) {
 	common.InitDefaultLogging(true)
 	var (
-		start              = net.ParseIP("10.0.1.0")
+		start              = utils.ParseIP("10.0.1.0")
 		size  utils.Offset = 48
 	)
 
 	// Fill a fresh space set
 	spaceset := spaceSetWith(&Space{Start: start, Size: size})
 	for i := utils.Offset(0); i < size; i++ {
-		ip := spaceset.Allocate()
-		wt.AssertTrue(t, ip != nil, "Failed to get IP!")
+		ok, _ := spaceset.Allocate()
+		wt.AssertTrue(t, ok, "Failed to get IP!")
 	}
 
 	wt.AssertEquals(t, spaceset.NumFreeAddresses(), utils.Offset(0))
@@ -92,12 +90,12 @@ func TestGiveUpHard(t *testing.T) {
 	// Now split
 	newRange, numGivenUp, ok := spaceset.GiveUpSpace()
 	wt.AssertBool(t, ok, true, "GiveUpSpace result")
-	wt.AssertTrue(t, newRange.Equal(net.ParseIP("10.0.1.24")), "Invalid start")
+	wt.AssertTrue(t, newRange == utils.ParseIP("10.0.1.24"), "Invalid start")
 	wt.AssertEquals(t, numGivenUp, utils.Offset(23))
 	wt.AssertEquals(t, spaceset.NumFreeAddresses(), utils.Offset(24))
 
 	//Space set should now have 2 spaces
 	expected := spaceSetWith(&Space{Start: start, Size: 24},
-		&Space{Start: net.ParseIP("10.0.1.47"), Size: 1})
+		&Space{Start: utils.ParseIP("10.0.1.47"), Size: 1})
 	wt.AssertTrue(t, spaceset.Equal(expected), "Wrong sets")
 }

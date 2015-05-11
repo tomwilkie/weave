@@ -3,7 +3,6 @@ package space
 import (
 	"fmt"
 	"math"
-	"net"
 
 	"github.com/weaveworks/weave/ipam/utils"
 	"golang.org/x/tools/container/intsets"
@@ -12,7 +11,7 @@ import (
 // Space repsents a range of addresses owned by this peer,
 // and contains the state for managing free addresses.
 type Space struct {
-	Start net.IP
+	Start utils.Address
 	Size  utils.Offset
 	inuse intsets.Sparse
 }
@@ -23,21 +22,21 @@ func (space *Space) assertInvariants() {
 	utils.Assert(space.inuse.Max() < int(space.Size))
 }
 
-func (space *Space) contains(addr net.IP) bool {
-	return utils.GE(addr, space.Start) && utils.Subtract(addr, space.Start) < space.Size
+func (space *Space) contains(addr utils.Address) bool {
+	return addr >= space.Start && utils.Offset(addr-space.Start) < space.Size
 }
 
 // Claim marks an address as allocated on behalf of some specific container
-func (space *Space) Claim(addr net.IP) (bool, error) {
+func (space *Space) Claim(addr utils.Address) (bool, error) {
 	if !space.contains(addr) {
 		return false, nil
 	}
-	space.inuse.Insert(int(utils.Subtract(addr, space.Start)))
+	space.inuse.Insert(int(addr - space.Start))
 	return true, nil
 }
 
 // Allocate returns the lowest availible IP within this space.
-func (space *Space) Allocate() net.IP {
+func (space *Space) Allocate() (bool, utils.Address) {
 	space.assertInvariants()
 	defer space.assertInvariants()
 
@@ -49,25 +48,25 @@ func (space *Space) Allocate() net.IP {
 		}
 	}
 	if offset >= space.Size { // out of space
-		return nil
+		return false, 0
 	}
 
 	space.inuse.Insert(int(offset))
-	return utils.Add(space.Start, offset)
+	return true, utils.Add(space.Start, offset)
 }
 
 // Free takes an IP in this space and record it as avalible.
-func (space *Space) Free(addr net.IP) error {
+func (space *Space) Free(addr utils.Address) error {
 	space.assertInvariants()
 	defer space.assertInvariants()
 
 	if !space.contains(addr) {
-		return fmt.Errorf("Free out of range: %s", addr)
+		return fmt.Errorf("Free out of range: %s", addr.String())
 	}
 
 	offset := utils.Subtract(addr, space.Start)
 	if !space.inuse.Has(int(offset)) {
-		return fmt.Errorf("Freeing address that is not in use: %s", addr)
+		return fmt.Errorf("Freeing address that is not in use: %s", addr.String())
 	}
 	space.inuse.Remove(int(offset))
 
@@ -76,7 +75,7 @@ func (space *Space) Free(addr net.IP) error {
 
 // assertFree asserts that the size consequtive IPs from start
 // (inclusive) are not allocated
-func (space *Space) assertFree(start net.IP, size utils.Offset) {
+func (space *Space) assertFree(start utils.Address, size utils.Offset) {
 	utils.Assert(space.contains(start))
 	utils.Assert(space.contains(utils.Add(start, size-1)))
 
@@ -92,8 +91,8 @@ func (space *Space) assertFree(start net.IP, size utils.Offset) {
 
 // BiggestFreeChunk scans the in-use list and returns the
 // start, length of the largest free range of address it
-// can find.
-func (space *Space) BiggestFreeChunk() (net.IP, utils.Offset) {
+// can find.  Length zero means it couldn't find any free space.
+func (space *Space) BiggestFreeChunk() (utils.Address, utils.Offset) {
 	space.assertInvariants()
 	defer space.assertInvariants()
 
@@ -125,7 +124,7 @@ func (space *Space) BiggestFreeChunk() (net.IP, utils.Offset) {
 
 	// Now return what we found
 	if chunkSize == 0 {
-		return nil, 0
+		return 0, 0
 	}
 
 	addr := utils.Add(space.Start, chunkStart)
@@ -146,11 +145,11 @@ func (space *Space) NumFreeAddresses() utils.Offset {
 }
 
 func (space *Space) String() string {
-	return fmt.Sprintf("%s+%d (%d)", space.Start, space.Size, space.inuse.Len())
+	return fmt.Sprintf("%s+%d (%d)", space.Start.String(), space.Size, space.inuse.Len())
 }
 
 // Split divide this space into two new spaces at a given address, copying allocations and frees.
-func (space *Space) Split(addr net.IP) (*Space, *Space) {
+func (space *Space) Split(addr utils.Address) (*Space, *Space) {
 	utils.Assert(space.contains(addr))
 	breakpoint := utils.Subtract(addr, space.Start)
 	ret1 := &Space{Start: space.Start, Size: breakpoint}
