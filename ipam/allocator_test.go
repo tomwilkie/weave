@@ -29,7 +29,7 @@ func TestAllocFree(t *testing.T) {
 		spaceSize  = 14         // 16 IP addresses in /28, minus .0 and .15
 	)
 
-	alloc := testAllocator(t, "01:00:00:01:00:00", universe, 1)
+	alloc := makeAllocatorWithMockGossip(t, "01:00:00:01:00:00", universe, 1)
 	defer alloc.Stop()
 
 	alloc.claimRingForTesting()
@@ -66,11 +66,11 @@ func TestBootstrap(t *testing.T) {
 		peerNameString = "02:00:00:02:00:00"
 	)
 
-	alloc1 := testAllocator(t, ourNameString, testStart1+"/22", 2)
+	alloc1 := makeAllocatorWithMockGossip(t, ourNameString, testStart1+"/22", 2)
 	defer alloc1.Stop()
 
 	// Simulate another peer on the gossip network
-	alloc2 := testAllocator(t, peerNameString, testStart1+"/22", 2)
+	alloc2 := makeAllocatorWithMockGossip(t, peerNameString, testStart1+"/22", 2)
 	defer alloc2.Stop()
 
 	alloc1.OnGossipBroadcast(alloc2.encode())
@@ -124,7 +124,7 @@ func TestAllocatorClaim(t *testing.T) {
 		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
 	)
 
-	alloc := testAllocator(t, "01:00:00:01:00:00", universe, 1)
+	alloc := makeAllocatorWithMockGossip(t, "01:00:00:01:00:00", universe, 1)
 	defer alloc.Stop()
 
 	alloc.claimRingForTesting()
@@ -212,7 +212,7 @@ func TestGossipShutdown(t *testing.T) {
 		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
 	)
 
-	alloc := testAllocator(t, "01:00:00:01:00:00", universe, 1)
+	alloc := makeAllocatorWithMockGossip(t, "01:00:00:01:00:00", universe, 1)
 	defer alloc.Stop()
 
 	alloc.claimRingForTesting()

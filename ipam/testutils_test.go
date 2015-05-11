@@ -136,7 +136,7 @@ func makeAllocator(name string, cidr string, quorum uint) *Allocator {
 	return alloc
 }
 
-func testAllocator(t *testing.T, name string, universeCIDR string, quorum uint) *Allocator {
+func makeAllocatorWithMockGossip(t *testing.T, name string, universeCIDR string, quorum uint) *Allocator {
 	alloc := makeAllocator(name, universeCIDR, quorum)
 	gossip := &mockGossipComms{t: t, name: name}
 	alloc.SetInterfaces(gossip)
