@@ -20,6 +20,8 @@ import (
 const (
 	msgSpaceRequest = iota
 	msgRingUpdate
+
+	paxosInterval = time.Second * 5
 )
 
 // operation represents something which Allocator wants to do, but
@@ -54,6 +56,7 @@ type Allocator struct {
 	pendingClaims      []operation                // held until we know who owns the space
 	gossip             router.Gossip              // our link to the outside world for sending messages
 	paxos              paxos.Node
+	paxosTicker        *time.Ticker
 	shuttingDown       bool // to avoid doing any requests while trying to shut down
 }
 
@@ -413,11 +416,21 @@ func (alloc *Allocator) SetInterfaces(gossip router.Gossip) {
 
 func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 	for {
-		action := <-actionChan
-		if action == nil {
-			break
+		tickChan := func() <-chan time.Time {
+			if alloc.paxosTicker != nil {
+				return alloc.paxosTicker.C
+			}
+			return nil
 		}
-		action()
+		select {
+		case action := <-actionChan:
+			if action == nil {
+				return
+			}
+			action()
+		case <-tickChan():
+			alloc.propose()
+		}
 		alloc.assertInvariants()
 		alloc.reportFreeSpace()
 	}
@@ -457,6 +470,10 @@ func (alloc *Allocator) createRingIfConsensus() {
 	if alloc.ring.Empty() {
 		if val := alloc.paxos.Consensus(); val != nil {
 			alloc.debugln("Paxos consensus:", val)
+			if alloc.paxosTicker != nil {
+				alloc.paxosTicker.Stop()
+				alloc.paxosTicker = nil
+			}
 			alloc.ring.ClaimForSet(val)
 			alloc.considerNewSpaces()
 			alloc.gossip.GossipBroadcast(alloc.Gossip())
@@ -465,17 +482,21 @@ func (alloc *Allocator) createRingIfConsensus() {
 	}
 }
 
+func (alloc *Allocator) propose() {
+	alloc.debugf("Paxos proposing")
+	alloc.paxos.Propose()
+	alloc.gossip.GossipBroadcast(alloc.Gossip())
+}
+
 func (alloc *Allocator) driveConsensus() {
 	if !alloc.ring.Empty() {
 		return
 	}
-	val := alloc.paxos.Consensus()
-	if val == nil {
-		// todo: re-propose after some timeout
-		alloc.debugln("Paxos proposing")
-		alloc.paxos.Propose()
-		val = alloc.paxos.Consensus()
-		alloc.gossip.GossipBroadcast(alloc.Gossip())
+	if alloc.paxosTicker == nil && alloc.paxos.Consensus() == nil {
+		alloc.propose()
+		if alloc.paxos.Consensus() == nil {
+			alloc.paxosTicker = time.NewTicker(paxosInterval) // re-try until we get consensus
+		}
 	}
 	alloc.createRingIfConsensus()
 }
