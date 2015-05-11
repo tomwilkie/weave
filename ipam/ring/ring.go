@@ -376,22 +376,28 @@ func (r *Ring) ClaimForPeers(peers []router.PeerName) {
 	defer r.updateExportedVariables()
 
 	totalSize := r.distance(r.Start, r.End)
-	if uint64(len(peers)) > uint64(totalSize) {
-		peers = peers[:totalSize] // if more peers than IPs then truncate
-	}
-	index := r.Start
-	length := totalSize / uint32(len(peers))
+	share := totalSize/uint32(len(peers)) + 1
+	remainder := totalSize % uint32(len(peers))
+	pos := r.Start
+
 	for i, peer := range peers {
-		if i == len(peers)-1 { // last one
-			length = totalSize - (index - r.Start)
+		if uint32(i) == remainder {
+			share--
+			if share == 0 {
+				break
+			}
 		}
-		if e, found := r.Entries.get(index); found {
-			e.update(peer, length)
+
+		if e, found := r.Entries.get(pos); found {
+			e.update(peer, share)
 		} else {
-			r.Entries.insert(entry{Token: index, Peer: peer, Free: length})
+			r.Entries.insert(entry{Token: pos, Peer: peer, Free: share})
 		}
-		index += length
+
+		pos += share
 	}
+
+	utils.Assert(pos == r.End)
 }
 
 func (r *Ring) ClaimItAll() {
