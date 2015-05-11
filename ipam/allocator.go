@@ -122,7 +122,7 @@ func (alloc *Allocator) doOperation(op operation, ops *[]operation) {
 			op.Cancel()
 			return
 		}
-		alloc.driveConsensus()
+		alloc.establishRing()
 		if !op.Try(alloc) {
 			*ops = append(*ops, op)
 		}
@@ -417,21 +417,21 @@ func (alloc *Allocator) SetInterfaces(gossip router.Gossip) {
 
 func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 	for {
-		tickChan := func() <-chan time.Time {
-			if alloc.paxosTicker != nil {
-				return alloc.paxosTicker.C
-			}
-			return nil
+		var tickChan <-chan time.Time
+		if alloc.paxosTicker != nil {
+			tickChan = alloc.paxosTicker.C
 		}
+
 		select {
 		case action := <-actionChan:
 			if action == nil {
 				return
 			}
 			action()
-		case <-tickChan():
+		case <-tickChan:
 			alloc.propose()
 		}
+
 		alloc.assertInvariants()
 		alloc.reportFreeSpace()
 	}
@@ -467,20 +467,42 @@ func (alloc *Allocator) string() string {
 	return buf.String()
 }
 
+// Ensure we are making progress towards an established ring
+func (alloc *Allocator) establishRing() {
+	if !alloc.ring.Empty() || alloc.paxosTicker != nil {
+		return
+	}
+
+	alloc.propose()
+	if cons := alloc.paxos.Consensus(); cons != nil {
+		// If the quorum was 1, then proposing immediately
+		// leads to consensus
+		alloc.createRing(cons)
+	} else {
+		// re-try until we get consensus
+		alloc.paxosTicker = time.NewTicker(paxosInterval)
+	}
+}
+
 func (alloc *Allocator) createRingIfConsensus() {
 	if alloc.ring.Empty() {
-		if val := alloc.paxos.Consensus(); val != nil {
-			alloc.debugln("Paxos consensus:", val)
-			if alloc.paxosTicker != nil {
-				alloc.paxosTicker.Stop()
-				alloc.paxosTicker = nil
-			}
-			alloc.ring.ClaimForPeers(normalizeConsensus(val))
-			alloc.considerNewSpaces()
-			alloc.gossip.GossipBroadcast(alloc.Gossip())
-			alloc.tryPendingOps()
+		if cons := alloc.paxos.Consensus(); cons != nil {
+			alloc.createRing(cons)
 		}
 	}
+}
+
+func (alloc *Allocator) createRing(peers []router.PeerName) {
+	alloc.debugln("Paxos consensus:", peers)
+	if alloc.paxosTicker != nil {
+		alloc.paxosTicker.Stop()
+		alloc.paxosTicker = nil
+	}
+
+	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
+	alloc.considerNewSpaces()
+	alloc.gossip.GossipBroadcast(alloc.Gossip())
+	alloc.tryPendingOps()
 }
 
 // For compatibility with sort.Interface
@@ -519,19 +541,6 @@ func (alloc *Allocator) propose() {
 	alloc.gossip.GossipBroadcast(alloc.Gossip())
 }
 
-func (alloc *Allocator) driveConsensus() {
-	if !alloc.ring.Empty() {
-		return
-	}
-	if alloc.paxosTicker == nil && alloc.paxos.Consensus() == nil {
-		alloc.propose()
-		if alloc.paxos.Consensus() == nil {
-			alloc.paxosTicker = time.NewTicker(paxosInterval) // re-try until we get consensus
-		}
-	}
-	alloc.createRingIfConsensus()
-}
-
 func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
 	msg := router.Concat([]byte{kind}, alloc.encode())
 	alloc.gossip.GossipUnicast(dest, msg)
@@ -557,6 +566,7 @@ func (alloc *Allocator) update(msg []byte) error {
 			if alloc.paxos.Think() { // If something important changed, broadcast
 				alloc.gossip.GossipBroadcast(alloc.Gossip())
 			}
+
 			alloc.createRingIfConsensus()
 		}
 	}
