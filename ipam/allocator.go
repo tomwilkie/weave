@@ -384,7 +384,8 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 	return nil, <-resultChan // for now, we never propagate updates. TBD
 }
 
-// GossipData implementation is trivial - we always gossip the whole ring
+// GossipData implementation is trivial - we always gossip the latest
+// data we have at time of sending
 type ipamGossipData struct {
 	alloc *Allocator
 }
@@ -491,15 +492,13 @@ func (alloc *Allocator) update(msg []byte) error {
 	}
 
 	if data.Ring != nil {
-		//alloc.debugln("Received ring update:", val.String())
 		err = alloc.ring.UpdateRing(data.Ring)
 		alloc.considerNewSpaces()
 		alloc.tryPendingOps()
 	}
 	if data.Paxos != nil {
-		//alloc.debugln("Received paxos update:", val)
 		if alloc.paxos.Update(data.Paxos) {
-			if alloc.paxos.Think() {
+			if alloc.paxos.Think() { // If something important changed, broadcast
 				alloc.gossip.GossipBroadcast(alloc.Gossip())
 			}
 			alloc.createRingIfConsensus()
