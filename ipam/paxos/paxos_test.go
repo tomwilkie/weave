@@ -215,7 +215,7 @@ func (m *Model) simulate(params *TestParams) bool {
 			// we detect the latter cases and force a new
 			// proposal
 			for i := range m.nodes {
-				ok, _ := m.nodes[i].consensus()
+				ok, _ := m.nodes[i].Consensus()
 				if ok {
 					return true
 				}
@@ -239,7 +239,7 @@ func (m *Model) simulate(params *TestParams) bool {
 			node.Think()
 
 			if !node.firstConsensus.Origin.valid() {
-				ok, val := node.consensus()
+				ok, val := node.Consensus()
 				if ok {
 					node.firstConsensus = val
 				}
@@ -297,7 +297,7 @@ func (m *Model) validate() {
 	var origin ProposalID
 
 	for i := range m.nodes {
-		ok, val := m.nodes[i].consensus()
+		ok, val := m.nodes[i].Consensus()
 		if !ok {
 			//m.dump()
 			m.t.Fatal("Node doesn't know about consensus")

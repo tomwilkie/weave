@@ -226,7 +226,7 @@ func (node *Node) pickValue() Value {
 }
 
 // Has a consensus been reached, based on the known claims of other nodes?
-func (node *Node) consensus() (bool, AcceptedValue) {
+func (node *Node) Consensus() (bool, AcceptedValue) {
 	counts := map[ProposalID]uint{}
 
 	for _, claims := range node.knows {
@@ -243,15 +243,8 @@ func (node *Node) consensus() (bool, AcceptedValue) {
 	return false, AcceptedValue{}
 }
 
-// Consensus for public consumption - return just the map, which will
-// be nil if no consensus
-func (node *Node) Consensus() []router.PeerName {
-	_, val := node.consensus()
-	return val.Value
-}
-
 func (node *Node) String() string {
-	if ok, val := node.consensus(); ok {
+	if ok, val := node.Consensus(); ok {
 		return fmt.Sprintf("Consensus reached with size %d", len(val.Value))
 	} else {
 		return fmt.Sprintf("Nodes known: %d, Quorum size: %d", len(node.knows), node.quorum)
