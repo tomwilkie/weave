@@ -47,7 +47,7 @@ type Allocator struct {
 	actionChan         chan<- func()
 	ourName            router.PeerName
 	subnetStart        net.IP                     // start address of space all peers are allocating from
-	subnetSize         uint32                     // length of space all peers are allocating from
+	subnetSize         utils.Offset               // length of space all peers are allocating from
 	prefixLen          int                        // network prefix length, e.g. 24 for a /24 network
 	ring               *ring.Ring                 // information on ranges owned by all peers
 	spaceSet           space.Set                  // more detail on ranges owned by us
@@ -72,7 +72,7 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, subnetCIDR str
 	}
 	// Get the size of the network from the mask
 	ones, bits := subnet.Mask.Size()
-	var subnetSize uint32 = 1 << uint(bits-ones)
+	var subnetSize utils.Offset = 1 << uint(bits-ones)
 	if subnetSize < 4 {
 		return nil, errors.New("Allocation subnet too small")
 	} else if subnetSize > space.MaxSize {
@@ -595,7 +595,7 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 		alloc.debugln("No space to give to peer", to)
 		return
 	}
-	end := utils.IntIP4(utils.IP4int(start) + size)
+	end := utils.AddressIP4(utils.IP4Address(start) + utils.Address(size))
 	alloc.debugln("Giving range", start, end, size, "to", to)
 	alloc.ring.GrantRangeToHost(start, end, to)
 }
@@ -607,7 +607,7 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 func (alloc *Allocator) considerNewSpaces() {
 	ownedRanges := alloc.ring.OwnedRanges()
 	for _, r := range ownedRanges {
-		size := uint32(utils.Subtract(r.End, r.Start))
+		size := utils.Subtract(r.End, r.Start)
 		s, exists := alloc.spaceSet.Get(r.Start)
 		if !exists {
 			alloc.debugf("Found new space [%s, %s)", r.Start, r.End)
@@ -634,7 +634,7 @@ func (alloc *Allocator) assertInvariants() {
 		r := ranges[i]
 		s := spaces[i]
 
-		rSize := uint32(utils.Subtract(r.End, r.Start))
+		rSize := utils.Subtract(r.End, r.Start)
 		utils.Assert(s.Start.Equal(r.Start) && s.Size == rSize)
 	}
 }
@@ -645,9 +645,9 @@ func (alloc *Allocator) reportFreeSpace() {
 		return
 	}
 
-	freespace := make(map[uint32]uint32)
+	freespace := make(map[utils.Address]utils.Offset)
 	for _, s := range spaces {
-		freespace[utils.IP4int(s.Start)] = s.NumFreeAddresses()
+		freespace[utils.IP4Address(s.Start)] = s.NumFreeAddresses()
 	}
 	alloc.ring.ReportFree(freespace)
 }

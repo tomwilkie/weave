@@ -9,10 +9,10 @@ import (
 
 // Entry represents entries around the ring
 type entry struct {
-	Token   uint32          // The start of this range
+	Token   utils.Address   // The start of this range
 	Peer    router.PeerName // Who owns this range
 	Version uint32          // Version of this range
-	Free    uint32          // Number of free IPs in this range
+	Free    utils.Offset    // Number of free IPs in this range
 }
 
 func (e *entry) Equal(e2 *entry) bool {
@@ -20,7 +20,7 @@ func (e *entry) Equal(e2 *entry) bool {
 		e.Version == e2.Version
 }
 
-func (e *entry) update(peername router.PeerName, free uint32) {
+func (e *entry) update(peername router.PeerName, free utils.Offset) {
 	e.Peer = peername
 	e.Version++
 	e.Free = free
@@ -55,7 +55,7 @@ func (es *entries) insert(e entry) {
 	(*es)[i] = &e
 }
 
-func (es entries) get(token uint32) (*entry, bool) {
+func (es entries) get(token utils.Address) (*entry, bool) {
 	i := sort.Search(len(es), func(j int) bool {
 		return es[j].Token >= token
 	})
@@ -76,7 +76,7 @@ func (es *entries) remove(i int) {
 // NBB this function does not work very well if there is only one
 //     token on the ring; luckily an accurate answer is not needed
 //     by the call sites in this case.
-func (es entries) between(token uint32, i, j int) bool {
+func (es entries) between(token utils.Address, i, j int) bool {
 	utils.Assert(i < j)
 
 	first := es.entry(i)

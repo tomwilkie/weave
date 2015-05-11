@@ -26,7 +26,7 @@ var now = func() int64 { return time.Now().Unix() }
 // Ring represents the ring itself
 type Ring struct {
 	Now        int64           // When we send this ring to someone we include the time to help detect clock skew
-	Start, End uint32          // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
+	Start, End utils.Address   // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
 	Entries    entries         // list of entries sorted by token
 }
@@ -94,7 +94,7 @@ func (r *Ring) checkInvariants() error {
 
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
-	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
+	start, end := utils.IP4Address(startIP), utils.IP4Address(endIP)
 	utils.Assert(start < end)
 
 	ring := &Ring{Start: start, End: end, Peername: peer, Entries: make([]*entry, 0)}
@@ -104,8 +104,8 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 
 // TotalRemoteFree returns the approximate number of free IPs
 // on other hosts.
-func (r *Ring) TotalRemoteFree() uint32 {
-	result := uint32(0)
+func (r *Ring) TotalRemoteFree() utils.Offset {
+	result := utils.Offset(0)
 	for _, entry := range r.Entries {
 		if entry.Peer != r.Peername {
 			result += entry.Free
@@ -116,12 +116,12 @@ func (r *Ring) TotalRemoteFree() uint32 {
 
 // Returns the distance between two tokens on this ring, dealing
 // with ranges which cross the origin
-func (r *Ring) distance(start, end uint32) uint32 {
+func (r *Ring) distance(start, end utils.Address) utils.Offset {
 	if end > start {
-		return end - start
+		return utils.Offset(end - start)
 	}
 
-	return (r.End - start) + (end - r.Start)
+	return utils.Offset((r.End - start) + (end - r.Start))
 }
 
 // GrantRangeToHost modifies the ring such that range [start, end)
@@ -135,7 +135,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, startIP, endIP, peer)
 
 	var (
-		start, end = utils.IP4int(startIP), utils.IP4int(endIP)
+		start, end = utils.IP4Address(startIP), utils.IP4Address(endIP)
 		length     = r.distance(start, end)
 	)
 
@@ -255,7 +255,7 @@ func (r *Ring) merge(gossip Ring) error {
 			switch {
 			case mine.Version >= theirs.Version:
 				if mine.Version == theirs.Version && !mine.Equal(theirs) {
-					common.Debug.Printf("Error merging entries at %s - %v != %v\n", utils.IntIP4(mine.Token), mine, theirs)
+					common.Debug.Printf("Error merging entries at %s - %v != %v\n", utils.AddressIP4(mine.Token), mine, theirs)
 					return ErrInvalidEntry
 				}
 				addToResult(*mine)
@@ -346,22 +346,22 @@ func (r *Ring) OwnedRanges() []Range {
 		case nextEntry.Token == r.Start:
 			// be careful here; if end token == start (ie last)
 			// entry on ring, we want to actually use r.End
-			result = append(result, Range{Start: utils.IntIP4(entry.Token),
-				End: utils.IntIP4(r.End)})
+			result = append(result, Range{Start: utils.AddressIP4(entry.Token),
+				End: utils.AddressIP4(r.End)})
 
 		case nextEntry.Token <= entry.Token:
 			// We wrapped; want to split around 0
 			// First shuffle everything up as we want results to be sorted
 			result = append(result, Range{})
 			copy(result[1:], result[:len(result)-1])
-			result[0] = Range{Start: utils.IntIP4(r.Start),
-				End: utils.IntIP4(nextEntry.Token)}
-			result = append(result, Range{Start: utils.IntIP4(entry.Token),
-				End: utils.IntIP4(r.End)})
+			result[0] = Range{Start: utils.AddressIP4(r.Start),
+				End: utils.AddressIP4(nextEntry.Token)}
+			result = append(result, Range{Start: utils.AddressIP4(entry.Token),
+				End: utils.AddressIP4(r.End)})
 
 		default:
-			result = append(result, Range{Start: utils.IntIP4(entry.Token),
-				End: utils.IntIP4(nextEntry.Token)})
+			result = append(result, Range{Start: utils.AddressIP4(entry.Token),
+				End: utils.AddressIP4(nextEntry.Token)})
 		}
 	}
 
@@ -376,12 +376,12 @@ func (r *Ring) ClaimForPeers(peers []router.PeerName) {
 	defer r.updateExportedVariables()
 
 	totalSize := r.distance(r.Start, r.End)
-	share := totalSize/uint32(len(peers)) + 1
-	remainder := totalSize % uint32(len(peers))
+	share := totalSize/utils.Offset(len(peers)) + 1
+	remainder := totalSize % utils.Offset(len(peers))
 	pos := r.Start
 
 	for i, peer := range peers {
-		if uint32(i) == remainder {
+		if utils.Offset(i) == remainder {
 			share--
 			if share == 0 {
 				break
@@ -394,7 +394,7 @@ func (r *Ring) ClaimForPeers(peers []router.PeerName) {
 			r.Entries.insert(entry{Token: pos, Peer: peer, Free: share})
 		}
 
-		pos += share
+		pos += utils.Address(share)
 	}
 
 	utils.Assert(pos == r.End)
@@ -405,14 +405,14 @@ func (r *Ring) ClaimItAll() {
 }
 
 func (r *Ring) FprintWithNicknames(w io.Writer, m map[router.PeerName]string) {
-	fmt.Fprintf(w, "Ring [%s, %s)\n", utils.IntIP4(r.Start), utils.IntIP4(r.End))
+	fmt.Fprintf(w, "Ring [%s, %s)\n", utils.AddressIP4(r.Start), utils.AddressIP4(r.End))
 	for _, entry := range r.Entries {
 		nickname, found := m[entry.Peer]
 		if found {
 			nickname = fmt.Sprintf(" (%s)", nickname)
 		}
 
-		fmt.Fprintf(w, "  %s -> %s%s (version: %d, free: %d)\n", utils.IntIP4(entry.Token),
+		fmt.Fprintf(w, "  %s -> %s%s (version: %d, free: %d)\n", utils.AddressIP4(entry.Token),
 			entry.Peer, nickname, entry.Version, entry.Free)
 	}
 }
@@ -426,7 +426,7 @@ func (r *Ring) String() string {
 // ReportFree is used by the allocator to tell the ring
 // how many free ips are in a given range, so that ChoosePeerToAskForSpace
 // can make more intelligent decisions.
-func (r *Ring) ReportFree(freespace map[uint32]uint32) {
+func (r *Ring) ReportFree(freespace map[utils.Address]utils.Offset) {
 	r.assertInvariants()
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
@@ -471,8 +471,8 @@ func (r *Ring) ReportFree(freespace map[uint32]uint32) {
 // for space.
 func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 	var (
-		sum               uint32
-		totalSpacePerPeer = make(map[router.PeerName]uint32) // Compute total free space per peer
+		sum               utils.Offset
+		totalSpacePerPeer = make(map[router.PeerName]utils.Offset) // Compute total free space per peer
 	)
 
 	// iterate through tokens
@@ -542,13 +542,13 @@ func (r *Ring) Transfer(from, to router.PeerName) error {
 
 // Contains returns true if addr is in this ring
 func (r *Ring) Contains(addr net.IP) bool {
-	pos := utils.IP4int(addr)
+	pos := utils.IP4Address(addr)
 	return pos >= r.Start && pos < r.End
 }
 
 // Owner returns the peername which owns the range containing addr
 func (r *Ring) Owner(addr net.IP) router.PeerName {
-	token := utils.IP4int(addr)
+	token := utils.IP4Address(addr)
 	utils.Assert(r.Start <= token && token < r.End)
 
 	r.assertInvariants()

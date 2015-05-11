@@ -4,6 +4,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/weaveworks/weave/ipam/utils"
 	wt "github.com/weaveworks/weave/testing"
 )
 
@@ -16,17 +17,17 @@ func TestSpaceAllocate(t *testing.T) {
 	)
 
 	space1 := Space{Start: net.ParseIP(testAddr1), Size: 20}
-	wt.AssertEqualUint32(t, space1.NumFreeAddresses(), 20, "Free addresses")
+	wt.AssertEquals(t, space1.NumFreeAddresses(), utils.Offset(20))
 	space1.assertInvariants()
 
 	addr1 := space1.Allocate()
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
-	wt.AssertEqualUint32(t, space1.NumFreeAddresses(), 19, "Free addresses")
+	wt.AssertEquals(t, space1.NumFreeAddresses(), utils.Offset(19))
 	space1.assertInvariants()
 
 	addr2 := space1.Allocate()
 	wt.AssertNotEqualString(t, addr2.String(), testAddr1, "address")
-	wt.AssertEqualUint32(t, space1.NumFreeAddresses(), 18, "Free addresses")
+	wt.AssertEquals(t, space1.NumFreeAddresses(), utils.Offset(18))
 	space1.assertInvariants()
 
 	space1.Free(addr2)
@@ -78,7 +79,7 @@ func TestSpaceFree(t *testing.T) {
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.22")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.21")))
 
-	wt.AssertEqualUint32(t, space.NumFreeAddresses(), 4, "Free list didn't shrink!")
+	wt.AssertEquals(t, space.NumFreeAddresses(), utils.Offset(4))
 
 	// Now get the biggest free space; should be 3.21
 	start, size = space.BiggestFreeChunk()
@@ -89,7 +90,7 @@ func TestSpaceFree(t *testing.T) {
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.11")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.10")))
 
-	wt.AssertEqualUint32(t, space.NumFreeAddresses(), 7, "Free list didn't shrink!")
+	wt.AssertEquals(t, space.NumFreeAddresses(), utils.Offset(7))
 
 	// Now get the biggest free space; should be 3.21
 	start, size = space.BiggestFreeChunk()
@@ -110,10 +111,10 @@ func TestSpaceSplit(t *testing.T) {
 	space1.Free(addr2)
 	space1.assertInvariants()
 	split1, split2 := space1.Split(net.ParseIP(testAddr2))
-	wt.AssertEqualUint32(t, split1.Size, 2, "split size")
-	wt.AssertEqualUint32(t, split2.Size, 8, "split size")
-	wt.AssertEqualUint32(t, split1.NumFreeAddresses(), 1, "Free addresses")
-	wt.AssertEqualUint32(t, split2.NumFreeAddresses(), 7, "Free addresses")
+	wt.AssertEquals(t, split1.Size, utils.Offset(2))
+	wt.AssertEquals(t, split2.Size, utils.Offset(8))
+	wt.AssertEquals(t, split1.NumFreeAddresses(), utils.Offset(1))
+	wt.AssertEquals(t, split2.NumFreeAddresses(), utils.Offset(7))
 	space1.assertInvariants()
 	split1.assertInvariants()
 	split2.assertInvariants()

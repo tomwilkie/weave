@@ -51,8 +51,8 @@ func TestGiveUpSimple(t *testing.T) {
 	start, numGivenUp, ok := ps1.GiveUpSpace()
 	wt.AssertBool(t, ok, true, "GiveUpSpace result")
 	wt.AssertEqualString(t, start.String(), "10.0.1.24", "Invalid start")
-	wt.AssertEqualUint32(t, numGivenUp, 24, "GiveUpSpace 1 size")
-	wt.AssertEqualUint32(t, ps1.NumFreeAddresses(), 24, "num free addresses")
+	wt.AssertEquals(t, numGivenUp, utils.Offset(24))
+	wt.AssertEquals(t, ps1.NumFreeAddresses(), utils.Offset(24))
 
 	// Now check we can give the rest up.
 	count := 0 // count to avoid infinite loop
@@ -63,29 +63,29 @@ func TestGiveUpSimple(t *testing.T) {
 		}
 		numGivenUp += size
 	}
-	wt.AssertEqualUint32(t, ps1.NumFreeAddresses(), 0, "num free addresses")
-	wt.AssertEqualUint32(t, numGivenUp, 48, "total space given up")
+	wt.AssertEquals(t, ps1.NumFreeAddresses(), utils.Offset(0))
+	wt.AssertEquals(t, numGivenUp, utils.Offset(48))
 }
 
 func TestGiveUpHard(t *testing.T) {
 	common.InitDefaultLogging(true)
 	var (
-		start        = net.ParseIP("10.0.1.0")
-		size  uint32 = 48
+		start              = net.ParseIP("10.0.1.0")
+		size  utils.Offset = 48
 	)
 
 	// Fill a fresh space set
 	spaceset := spaceSetWith(&Space{Start: start, Size: size})
-	for i := uint32(0); i < size; i++ {
+	for i := utils.Offset(0); i < size; i++ {
 		ip := spaceset.Allocate()
 		wt.AssertTrue(t, ip != nil, "Failed to get IP!")
 	}
 
-	wt.AssertEqualUint32(t, spaceset.NumFreeAddresses(), 0, "num free addresses")
+	wt.AssertEquals(t, spaceset.NumFreeAddresses(), utils.Offset(0))
 
 	// Now free all but the last address
 	// this will force us to split the free list
-	for i := uint32(0); i < size-1; i++ {
+	for i := utils.Offset(0); i < size-1; i++ {
 		wt.AssertSuccess(t, spaceset.Free(utils.Add(start, i)))
 	}
 
@@ -93,8 +93,8 @@ func TestGiveUpHard(t *testing.T) {
 	newRange, numGivenUp, ok := spaceset.GiveUpSpace()
 	wt.AssertBool(t, ok, true, "GiveUpSpace result")
 	wt.AssertTrue(t, newRange.Equal(net.ParseIP("10.0.1.24")), "Invalid start")
-	wt.AssertEqualUint32(t, numGivenUp, 23, "GiveUpSpace 1 size")
-	wt.AssertEqualUint32(t, spaceset.NumFreeAddresses(), 24, "num free addresses")
+	wt.AssertEquals(t, numGivenUp, utils.Offset(23))
+	wt.AssertEquals(t, spaceset.NumFreeAddresses(), utils.Offset(24))
 
 	//Space set should now have 2 spaces
 	expected := spaceSetWith(&Space{Start: start, Size: 24},

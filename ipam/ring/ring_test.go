@@ -24,10 +24,10 @@ var (
 	ipDot250          = net.ParseIP("10.0.0.250")
 	ipMiddle          = net.ParseIP("10.0.0.128")
 
-	start, end    = utils.IP4int(ipStart), utils.IP4int(ipEnd)
-	dot10, dot245 = utils.IP4int(ipDot10), utils.IP4int(ipDot245)
-	dot250        = utils.IP4int(ipDot250)
-	middle        = utils.IP4int(ipMiddle)
+	start, end    = utils.IP4Address(ipStart), utils.IP4Address(ipEnd)
+	dot10, dot245 = utils.IP4Address(ipDot10), utils.IP4Address(ipDot245)
+	dot250        = utils.IP4Address(ipDot250)
+	middle        = utils.IP4Address(ipMiddle)
 )
 
 func TestInvariants(t *testing.T) {
@@ -76,7 +76,7 @@ func TestBetween(t *testing.T) {
 	// First off, in a ring where everything is owned by the peer
 	// between should return true for everything
 	for i := 1; i <= 255; i++ {
-		ip := utils.IP4int(net.ParseIP(fmt.Sprintf("10.0.0.%d", i)))
+		ip := utils.IP4Address(net.ParseIP(fmt.Sprintf("10.0.0.%d", i)))
 		wt.AssertTrue(t, ring1.Entries.between(ip, 0, 1), "between should be true!")
 	}
 
@@ -87,7 +87,7 @@ func TestBetween(t *testing.T) {
 	ring1.assertInvariants()
 	for i := 10; i <= 244; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.IP4int(net.ParseIP(ipStr))
+		ip := utils.IP4Address(net.ParseIP(ipStr))
 		wt.AssertTrue(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 		wt.AssertFalse(t, ring1.Entries.between(ip, 1, 2),
@@ -95,7 +95,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 0; i <= 9; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.IP4int(net.ParseIP(ipStr))
+		ip := utils.IP4Address(net.ParseIP(ipStr))
 		wt.AssertFalse(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.Entries.between(ip, 1, 2),
@@ -103,7 +103,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 245; i <= 255; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.IP4int(net.ParseIP(ipStr))
+		ip := utils.IP4Address(net.ParseIP(ipStr))
 		wt.AssertFalse(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.Entries.between(ip, 1, 2),
@@ -348,7 +348,7 @@ func TestFindFree(t *testing.T) {
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
 	// We shouldn't return outselves
-	ring1.ReportFree(map[uint32]uint32{start: 10})
+	ring1.ReportFree(map[utils.Address]utils.Offset{start: 10})
 	_, err = ring1.ChoosePeerToAskForSpace()
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
@@ -378,9 +378,9 @@ func TestReportFree(t *testing.T) {
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
 	wt.AssertSuccess(t, ring2.merge(*ring1))
 
-	freespace := make(map[uint32]uint32)
+	freespace := make(map[utils.Address]utils.Offset)
 	for _, r := range ring2.OwnedRanges() {
-		freespace[utils.IP4int(r.Start)] = 0
+		freespace[utils.IP4Address(r.Start)] = 0
 	}
 	ring2.ReportFree(freespace)
 }
@@ -503,11 +503,11 @@ func TestOwner(t *testing.T) {
 	})
 }
 
-type uint32slice []uint32
+type addressSlice []utils.Address
 
-func (s uint32slice) Len() int           { return len(s) }
-func (s uint32slice) Less(i, j int) bool { return s[i] < s[j] }
-func (s uint32slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s addressSlice) Len() int           { return len(s) }
+func (s addressSlice) Less(i, j int) bool { return s[i] < s[j] }
+func (s addressSlice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 func TestFuzzRing(t *testing.T) {
 	var (
@@ -526,15 +526,15 @@ func TestFuzzRing(t *testing.T) {
 		addressSpace := end - start
 		numTokens := rand.Intn(int(addressSpace))
 
-		tokenMap := make(map[uint32]bool)
+		tokenMap := make(map[utils.Address]bool)
 		for i := 0; i < numTokens; i++ {
-			tokenMap[uint32(rand.Intn(int(addressSpace)))] = true
+			tokenMap[utils.Address(rand.Intn(int(addressSpace)))] = true
 		}
-		var tokens []uint32
+		var tokens []utils.Address
 		for token := range tokenMap {
 			tokens = append(tokens, token)
 		}
-		sort.Sort(uint32slice(tokens))
+		sort.Sort(addressSlice(tokens))
 
 		peer := peers[rand.Intn(len(peers))]
 		ring := New(ipStart, ipEnd, peer)
@@ -565,9 +565,9 @@ func TestFuzzRing(t *testing.T) {
 	makeBadRandomRing := func() *Ring {
 		addressSpace := end - start
 		numTokens := rand.Intn(int(addressSpace))
-		tokens := make([]uint32, numTokens)
+		tokens := make([]utils.Address, numTokens)
 		for i := 0; i < numTokens; i++ {
-			tokens[i] = uint32(rand.Intn(int(addressSpace)))
+			tokens[i] = utils.Address(rand.Intn(int(addressSpace)))
 		}
 
 		peer := peers[rand.Intn(len(peers))]
@@ -683,7 +683,7 @@ func TestFuzzRingHard(t *testing.T) {
 
 			rangeToSplit := ownedRanges[rand.Intn(len(ownedRanges))]
 			size := utils.Subtract(rangeToSplit.End, rangeToSplit.Start)
-			ipInRange := utils.Add(rangeToSplit.Start, uint32(rand.Intn(int(size))))
+			ipInRange := utils.Add(rangeToSplit.Start, utils.Offset(rand.Intn(int(size))))
 			_, peerToGiveTo, _ := randomPeer(-1)
 			common.Debug.Printf("%s: Granting [%v, %v) to %s", ring.Peername, ipInRange, rangeToSplit.End, peerToGiveTo)
 			ring.GrantRangeToHost(ipInRange, rangeToSplit.End, peerToGiveTo)

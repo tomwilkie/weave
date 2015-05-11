@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/weaveworks/weave/common"
+	"github.com/weaveworks/weave/ipam/utils"
 	"github.com/weaveworks/weave/router"
 	wt "github.com/weaveworks/weave/testing"
 )
@@ -54,7 +55,7 @@ func TestAllocFree(t *testing.T) {
 	alloc.ContainerDied(container2)
 	alloc.ContainerDied(container3)
 	alloc.String() // force sync-up after async call
-	wt.AssertEqualUint32(t, alloc.spaceSet.NumFreeAddresses(), spaceSize, "Total free addresses")
+	wt.AssertEquals(t, alloc.spaceSet.NumFreeAddresses(), utils.Offset(spaceSize))
 }
 
 func TestBootstrap(t *testing.T) {
@@ -251,7 +252,7 @@ func TestTransfer(t *testing.T) {
 	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc2.ourName.String()))
 	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc3.ourName.String()))
 
-	wt.AssertEqualUint32(t, alloc1.spaceSet.NumFreeAddresses(), 1022, "Total free addresses")
+	wt.AssertEquals(t, alloc1.spaceSet.NumFreeAddresses(), utils.Offset(1022))
 
 	addr = alloc1.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")

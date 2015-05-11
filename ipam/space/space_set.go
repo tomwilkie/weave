@@ -18,7 +18,7 @@ type Set struct {
 // For compatibility with sort
 func (s Set) Len() int { return len(s.spaces) }
 func (s Set) Less(i, j int) bool {
-	return utils.IP4int(s.spaces[i].Start) < utils.IP4int(s.spaces[j].Start)
+	return utils.IP4Address(s.spaces[i].Start) < utils.IP4Address(s.spaces[j].Start)
 }
 func (s Set) Swap(i, j int) { panic("Should never be swapping spaces!") }
 
@@ -68,7 +68,7 @@ func (s *Set) Clear() {
 // Return the position of the space at or above start
 func (s *Set) find(start net.IP) int {
 	return sort.Search(len(s.spaces), func(j int) bool {
-		return utils.IP4int(s.spaces[j].Start) >= utils.IP4int(start)
+		return utils.IP4Address(s.spaces[j].Start) >= utils.IP4Address(start)
 	})
 }
 
@@ -83,9 +83,9 @@ func (s *Set) Get(start net.IP) (*Space, bool) {
 
 // NumFreeAddresses returns the total free address across
 // all Spaces in this set.
-func (s *Set) NumFreeAddresses() uint32 {
+func (s *Set) NumFreeAddresses() utils.Offset {
 	// TODO: Optimize; perhaps maintain the count in allocate and free
-	var freeAddresses uint32
+	var freeAddresses utils.Offset
 	for _, space := range s.spaces {
 		freeAddresses += space.NumFreeAddresses()
 	}
@@ -94,7 +94,7 @@ func (s *Set) NumFreeAddresses() uint32 {
 
 // GiveUpSpace returns some large reasonably-sized chunk of free space.
 // Normally because one of our peers has asked for it.
-func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
+func (s *Set) GiveUpSpace() (net.IP, utils.Offset, bool) {
 	s.assertInvariants()
 	defer s.assertInvariants()
 
@@ -107,7 +107,7 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 
 	// First find the biggest free chunk amongst all our spaces
 	var bestStart net.IP
-	var bestSize uint32
+	var bestSize utils.Offset
 	var spaceIndex int
 	for j, space := range s.spaces {
 		chunkStart, chunkSize := space.BiggestFreeChunk()
