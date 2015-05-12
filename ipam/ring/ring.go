@@ -128,9 +128,8 @@ func (r *Ring) distance(start, end utils.Address) utils.Offset {
 // Preconditions:
 // - start < end
 // - [start, end) must be owned by the calling peer
-// - there must not be any live tokens in the range
 func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) {
-	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, startIP, endIP, peer)
+	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, start, end, peer)
 
 	var length = r.distance(start, end)
 
@@ -147,14 +146,10 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 
 	// Look for the left-most entry greater than start, then go one previous
 	// to get the right-most entry less than or equal to start
-	preceedingEntry := sort.Search(len(r.Entries), func(j int) bool {
+	preceedingPos := sort.Search(len(r.Entries), func(j int) bool {
 		return r.Entries[j].Token > start
 	})
-	preceedingEntry--
-
-	previousLiveEntry := r.Entries.entry(preceedingEntry)
-	// Trying to grant in a range I don't own?
-	utils.Assert(previousLiveEntry.Peer == r.Peername)
+	preceedingPos--
 
 	// At the end, the check is a little trickier.  There is never an entry with
 	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
@@ -163,46 +158,45 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 		end = r.Start
 	}
 
-	// Either the next token is the end token, or the end token is between
-	// the current and the next.
-	nextLiveEntry := r.Entries.entry(preceedingEntry + 1)
-	utils.Assert(r.Entries.between(end, preceedingEntry, preceedingEntry+1) ||
-		nextLiveEntry.Token == end)
+	// Check all tokens up to end are owned by us
+	for pos := preceedingPos; pos < len(r.Entries) && r.Entries.entry(pos).Token < end; pos++ {
+		utils.Assert(r.Entries.entry(pos).Peer == r.Peername)
+	}
 
 	// ----------------- End of Checks -----------------
 
-	// Is there already a token at start? in which case we need
-	// to change the owner and update version
-	// Note we don't need to check ownership; we did that above.
-	if startEntry, found := r.Entries.get(start); found {
-		startEntry.update(peer, length)
+	// Free space at start is max(length, distance to next token)
+	startFree := r.distance(start, r.Entries.entry(preceedingPos+1).Token)
+	if startFree > length {
+		startFree = length
+	}
+	// Is there already a token at start, update it
+	if previousEntry := r.Entries.entry(preceedingPos); previousEntry.Token == start {
+		previousEntry.update(peer, startFree)
 	} else {
 		// Otherwise, these isn't a token here, insert a new one.
-		// Checks have already ensured we own this range.
-		r.Entries.insert(entry{Token: start, Peer: peer, Free: length})
+		r.Entries.insert(entry{Token: start, Peer: peer, Free: startFree})
+		preceedingPos++
+		// Reset free space on previous entry, which we own.
+		previousEntry.update(r.Peername, r.distance(previousEntry.Token, start))
 	}
 
-	// Reset free space on previous entry, which we own.
-	if previousLiveEntry.Token != start {
-		previousLiveEntry.Free = r.distance(previousLiveEntry.Token, start)
-		previousLiveEntry.Version++
+	// Give all intervening tokens to the other peer
+	pos := preceedingPos + 1
+	for ; pos < len(r.Entries) && r.Entries.entry(pos).Token < end; pos++ {
+		entry := r.Entries.entry(pos)
+		entry.update(peer, entry.Free)
 	}
 
 	r.assertInvariants()
 
-	//  Case i.  there is a token equal to the end of the range
-	//        => we don't need to do anything
+	//  If there is a token equal to the end of the range, we don't need to do anything further
 	if _, found := r.Entries.get(end); found {
 		return
 	}
 
-	// Compute free space: nextLiveEntry might not be the next token
-	// after, it might be the same as end, but that will just under-estimate free
-	// space, which will get corrected by calls to ReportFree.
-	endFree := r.distance(end, nextLiveEntry.Token)
-
-	//   ii.  the end is between this token and the next,
-	//        => we need to insert a token such that we claim this bit on the end.
+	// If not, we need to insert a token such that we claim this bit on the end.
+	endFree := r.distance(end, r.Entries.entry(pos).Token)
 	r.Entries.insert(entry{Token: end, Peer: r.Peername, Free: endFree})
 }
 
