@@ -23,13 +23,14 @@ type ProposalID struct {
 }
 
 func (a ProposalID) precedes(b ProposalID) bool {
-	if a.Round != b.Round {
+	switch {
+	case a.Round != b.Round:
 		return a.Round < b.Round
-	} else if a.Proposer.Name != b.Proposer.Name {
+	case a.Proposer.Name != b.Proposer.Name:
 		return a.Proposer.Name < b.Proposer.Name
-	} else if a.Proposer.UID != b.Proposer.UID {
+	case a.Proposer.UID != b.Proposer.UID:
 		return a.Proposer.UID < b.Proposer.UID
-	} else {
+	default:
 		return false
 	}
 }
@@ -107,6 +108,7 @@ func (node *Node) Update(from GossipState) bool {
 
 		node.knows[i] = claims
 	}
+
 	return changed
 }
 
@@ -155,10 +157,10 @@ func (node *Node) Think() bool {
 	// do we have a proposal that has been promised by a quorum?
 	//
 	// In Paxos, the "proposer" and "acceptor" roles are distinct,
-	// so in principle a node acting as a proposer could could
-	// continue trying to get its proposal acccepted even after
-	// the same node as an acceptor has superseded that proposal.
-	// But that's pointless in a gossip context: If our promise
+	// so in principle a node acting as a proposer could continue
+	// trying to get its proposal acccepted even after the same
+	// node as an acceptor has superseded that proposal.  But
+	// that's pointless in a gossip context: If our promise
 	// supersedes our own proposal, then anyone who hears about
 	// that promise will not accept that proposal.  So our
 	// proposal is only in the running if it is also our promise.

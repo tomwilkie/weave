@@ -519,21 +519,21 @@ func (a peerNames) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func normalizeConsensus(consensus []router.PeerName) []router.PeerName {
 	if len(consensus) == 0 {
 		return nil
-	} else {
-		peers := make(peerNames, len(consensus))
-		copy(peers, consensus)
-		sort.Sort(peers)
-
-		dst := 0
-		for src := 1; src < len(peers); src++ {
-			if peers[dst] != peers[src] {
-				dst++
-				peers[dst] = peers[src]
-			}
-		}
-
-		return peers[:dst+1]
 	}
+
+	peers := make(peerNames, len(consensus))
+	copy(peers, consensus)
+	sort.Sort(peers)
+
+	dst := 0
+	for src := 1; src < len(peers); src++ {
+		if peers[dst] != peers[src] {
+			dst++
+			peers[dst] = peers[src]
+		}
+	}
+
+	return peers[:dst+1]
 }
 
 func (alloc *Allocator) propose() {
@@ -565,9 +565,13 @@ func (alloc *Allocator) update(msg []byte) error {
 		if !alloc.ring.Empty() {
 			alloc.ringUpdated()
 		}
-	} else if data.Paxos != nil && alloc.ring.Empty() {
+		return err
+	}
+
+	if data.Paxos != nil && alloc.ring.Empty() {
 		if alloc.paxos.Update(data.Paxos) {
-			if alloc.paxos.Think() { // If something important changed, broadcast
+			if alloc.paxos.Think() {
+				// If something important changed, broadcast
 				alloc.gossip.GossipBroadcast(alloc.Gossip())
 			}
 
@@ -577,7 +581,7 @@ func (alloc *Allocator) update(msg []byte) error {
 		}
 	}
 
-	return err
+	return nil
 }
 
 func (alloc *Allocator) donateSpace(to router.PeerName) {
