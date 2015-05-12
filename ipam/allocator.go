@@ -491,24 +491,20 @@ func (alloc *Allocator) establishRing() {
 	}
 }
 
-func (alloc *Allocator) createRingIfConsensus() {
-	if alloc.ring.Empty() {
-		if cons := alloc.consensus(); cons != nil {
-			alloc.createRing(cons)
-		}
-	}
-}
-
 func (alloc *Allocator) createRing(peers []router.PeerName) {
 	alloc.debugln("Paxos consensus:", peers)
+	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
+	alloc.gossip.GossipBroadcast(alloc.Gossip())
+	alloc.initializedRing()
+}
+
+func (alloc *Allocator) initializedRing() {
 	if alloc.paxosTicker != nil {
 		alloc.paxosTicker.Stop()
 		alloc.paxosTicker = nil
 	}
 
-	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
 	alloc.considerNewSpaces()
-	alloc.gossip.GossipBroadcast(alloc.Gossip())
 	alloc.tryPendingOps()
 }
 
@@ -563,18 +559,23 @@ func (alloc *Allocator) update(msg []byte) error {
 		return err
 	}
 
+	// only one of Ring and Paxos should be present.  And we
+	// shouldn't get updates for a non-empty Ring. But tolerate
+	// them just in case.
 	if data.Ring != nil {
 		err = alloc.ring.UpdateRing(data.Ring)
-		alloc.considerNewSpaces()
-		alloc.tryPendingOps()
-	}
-	if data.Paxos != nil {
+		if !alloc.ring.Empty() {
+			alloc.initializedRing()
+		}
+	} else if data.Paxos != nil && alloc.ring.Empty() {
 		if alloc.paxos.Update(data.Paxos) {
 			if alloc.paxos.Think() { // If something important changed, broadcast
 				alloc.gossip.GossipBroadcast(alloc.Gossip())
 			}
 
-			alloc.createRingIfConsensus()
+			if cons := alloc.consensus(); cons != nil {
+				alloc.createRing(cons)
+			}
 		}
 	}
 
