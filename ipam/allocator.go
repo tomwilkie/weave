@@ -495,10 +495,10 @@ func (alloc *Allocator) createRing(peers []router.PeerName) {
 	alloc.debugln("Paxos consensus:", peers)
 	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
 	alloc.gossip.GossipBroadcast(alloc.Gossip())
-	alloc.initializedRing()
+	alloc.ringUpdated()
 }
 
-func (alloc *Allocator) initializedRing() {
+func (alloc *Allocator) ringUpdated() {
 	if alloc.paxosTicker != nil {
 		alloc.paxosTicker.Stop()
 		alloc.paxosTicker = nil
@@ -565,7 +565,7 @@ func (alloc *Allocator) update(msg []byte) error {
 	if data.Ring != nil {
 		err = alloc.ring.UpdateRing(data.Ring)
 		if !alloc.ring.Empty() {
-			alloc.initializedRing()
+			alloc.ringUpdated()
 		}
 	} else if data.Paxos != nil && alloc.ring.Empty() {
 		if alloc.paxos.Update(data.Paxos) {
