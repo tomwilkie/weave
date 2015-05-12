@@ -66,7 +66,7 @@ func main() {
 	flag.IntVar(&config.ConnLimit, "connlimit", 30, "connection limit (0 for unlimited)")
 	flag.IntVar(&bufSzMB, "bufsz", 8, "capture buffer size in MB")
 	flag.StringVar(&httpAddr, "httpaddr", fmt.Sprintf(":%d", weave.HTTPPort), "address to bind HTTP interface to (disabled if blank, absolute path indicates unix domain socket)")
-	flag.StringVar(&iprangeCIDR, "iprange", "", "CIDR of IP address range to allocate within")
+	flag.StringVar(&iprangeCIDR, "iprange", "", "IP address range to allocate within, in CIDR notation")
 	flag.IntVar(&quorum, "quorum", 0, "quorum size for IP address allocation")
 	flag.StringVar(&apiPath, "api", "unix:///var/run/docker.sock", "Path to Docker API socket")
 	flag.Parse()
