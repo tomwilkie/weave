@@ -560,7 +560,7 @@ func (alloc *Allocator) update(msg []byte) error {
 	}
 
 	// only one of Ring and Paxos should be present.  And we
-	// shouldn't get updates for a non-empty Ring. But tolerate
+	// shouldn't get updates for a empty Ring. But tolerate
 	// them just in case.
 	if data.Ring != nil {
 		err = alloc.ring.UpdateRing(data.Ring)
