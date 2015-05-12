@@ -619,34 +619,6 @@ get_ipam_cidr() {
     fi
 }
 
-# Check that a container named $1 with image $2 is not running
-check_not_running() {
-    case $(docker inspect --format='{{.State.Running}} {{.Config.Image}}' $1 2>/dev/null) in
-        "true $2")
-            echo "$1 is already running." >&2
-            exit 1
-            ;;
-        "true $2:"*)
-            echo "$1 is already running." >&2
-            exit 1
-            ;;
-        "false $2")
-            docker rm $1 >/dev/null
-            ;;
-        "false $2:"*)
-            docker rm $1 >/dev/null
-            ;;
-        true*)
-            echo "Found another running container named '$1'. Aborting." >&2
-            exit 1
-            ;;
-        false*)
-            echo "Found another container named '$1'. Aborting." >&2
-            exit 1
-            ;;
-    esac
-}
-
 [ $(id -u) = 0 ] || {
     echo "weave must be run as 'root' when run locally" >&2
     exit 1
