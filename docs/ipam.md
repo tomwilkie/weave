@@ -130,19 +130,55 @@ In more detail:
 
 ## Initialisation
 
-Peers are told the the address space from which all allocations are
-made when starting up.  Each peer must be given the same space.
+The previous sections describe how peers coordinate changes to the
+ring.  But how is the initial state of the ring established?  If a new
+peer joins a long-standing cluster, it can learn about the ring state
+from other peers.  But in a freshly started cluster, the initial ring
+state must be established from a clean slate.  And it must be
+consistent across all peers.  This is a distributed consensus problem,
+and we solve it using the Paxos algorithm.
 
-When a peer starts up, it owns no address ranges. If it joins a
-network in which peers already own space, then it can request space
-from another peer as above. 
+Although Paxos has a reputation for being hard to understand and to
+implement, the implementation used for ring initialization is
+relatively straightforward:
 
-To bootstrap the initial ring, we use the Paxos algorithm to achieve
-consensus on an initial set of peers and divide the ring equally
-amongst them. Then, other peers can begin to request ranges from the
-initial set. Paxos requires that a 'quorum' of peers agree: the quorum
-size is derived from the set of peers announced at `weave launch`
-time, or set explicitly by the user.
+- We only need to establish consensus for a single value, rather than
+  a succession of values (as in a replicated transaction log).  Thus
+  we implement basic Paxos, rather than multi-Paxos, and the
+  implementation closely follows the outline of basic Paxos described
+  [on
+  wikipedia](http://en.wikipedia.org/wiki/Paxos_%28computer_science%29#Basic_Paxos).
+
+- All peers play all the roles described in basic Paxos: Proposer,
+  acceptor and listener.
+
+- Paxos is usually described in terms of unicast messages from one
+  agent to another, although three of the four messages are multicast
+  to all agents in a certain role ("prepare" and "accept request" from
+  a proposer to all acceptors; "accepted" from an acceptor to all
+  learners).  So most implementations involve a communications layer
+  to implement the required communication patterns.  But our
+  implementation is built on top of the weave gossip layer, which
+  gives us a broadcast medium.  Using broadcast for the one truly
+  unicast message ("promise") may seem wasteful, but as we only
+  establish consensus for a single value, it is not a major concern.
+
+The value the peers obtain consensus on is the set of peers that will
+be represented in the initial ring (with each peer getting an equal
+share of the address space).  When a proposing peer gets to choose the
+value, it includes all the peers it has heard from during the Paxos
+phase, which is at least a quorum.
+
+Once a consensus is reached, it is used to initialize the ring.  If a
+peer hears about an initialized ring via gossip, that implies that a
+consensus was reached, so it will stop participating in Paxos.
+
+Paxos requires that we know the quorum size for the cluster.  As weave
+clusters are a dynamic entity, there is no fixed quorum size.  But the
+Paxos phase used to initialize the ring should normally be
+short-lived, so we just need to know the initial cluster size.  A
+heuristic is used to derive this from the list of addresses passed to
+`weave launch`, but the user can set it explicitly.
 
 ## Peer shutdown
 
