@@ -50,7 +50,7 @@ type Allocator struct {
 	subnetSize         utils.Offset               // length of space all peers are allocating from
 	prefixLen          int                        // network prefix length, e.g. 24 for a /24 network
 	ring               *ring.Ring                 // information on ranges owned by all peers
-	spaceSet           space.Set                  // more detail on ranges owned by us
+	space              space.Space                // more detail on ranges owned by us
 	owned              map[string]utils.Address   // who owns what address, indexed by container-ID
 	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for rmpeer
 	pendingAllocates   []operation                // held until we get some free space
@@ -75,8 +75,6 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, subnetCIDR str
 	var subnetSize utils.Offset = 1 << uint(bits-ones)
 	if subnetSize < 4 {
 		return nil, errors.New("Allocation subnet too small")
-	} else if subnetSize > space.MaxSize {
-		return nil, errors.New("Allocation subnet too large")
 	}
 	subnetStart := utils.IP4Address(subnet.IP)
 	alloc := &Allocator{
@@ -241,7 +239,7 @@ func (alloc *Allocator) free(ident string) error {
 	alloc.actionChan <- func() {
 		addr, found := alloc.owned[ident]
 		if found {
-			alloc.spaceSet.Free(addr)
+			alloc.space.Free(addr)
 		}
 		delete(alloc.owned, ident)
 
@@ -277,7 +275,7 @@ func (alloc *Allocator) Shutdown() {
 		alloc.cancelOps(&alloc.pendingAllocates)
 		if heir := alloc.ring.PickPeerForTransfer(); heir != router.UnknownPeerName {
 			alloc.ring.Transfer(alloc.ourName, heir)
-			alloc.spaceSet.Clear()
+			alloc.space.Clear()
 			alloc.gossip.GossipBroadcast(alloc.Gossip())
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -316,8 +314,8 @@ func (alloc *Allocator) AdminTakeoverRanges(peerNameOrNickname string) error {
 		}
 
 		delete(alloc.otherPeerNicknames, peername)
-		err := alloc.ring.Transfer(peername, alloc.ourName)
-		alloc.considerNewSpaces()
+		err, newRanges := alloc.ring.Transfer(peername, alloc.ourName)
+		alloc.space.AddRanges(newRanges)
 		resultChan <- err
 	}
 	return <-resultChan
@@ -448,14 +446,14 @@ func (alloc *Allocator) string() string {
 	if alloc.ring.Empty() {
 		fmt.Fprintf(&buf, "Paxos: %s", alloc.paxos.String())
 	} else {
-		localFreeSpace := alloc.spaceSet.NumFreeAddresses()
+		localFreeSpace := alloc.space.NumFreeAddresses()
 		remoteFreeSpace := alloc.ring.TotalRemoteFree()
 		percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(alloc.subnetSize)
 		fmt.Fprintf(&buf, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
 			percentFree, localFreeSpace, remoteFreeSpace)
 
 		alloc.ring.FprintWithNicknames(&buf, alloc.otherPeerNicknames)
-		fmt.Fprintf(&buf, alloc.spaceSet.String())
+		fmt.Fprintf(&buf, alloc.space.String())
 		if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
 			fmt.Fprintf(&buf, "\nPending requests for ")
 		}
@@ -504,7 +502,7 @@ func (alloc *Allocator) ringUpdated() {
 		alloc.paxosTicker = nil
 	}
 
-	alloc.considerNewSpaces()
+	alloc.space.UpdateRanges(alloc.ring.OwnedRanges())
 	alloc.tryPendingOps()
 }
 
@@ -591,9 +589,10 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	defer alloc.sendRequest(to, msgRingUpdate)
 
 	alloc.debugln("Peer", to, "asked me for space")
-	start, size, ok := alloc.spaceSet.GiveUpSpace()
+	alloc.debugln(alloc.string())
+	start, size, ok := alloc.space.Donate()
 	if !ok {
-		free := alloc.spaceSet.NumFreeAddresses()
+		free := alloc.space.NumFreeAddresses()
 		utils.Assert(free == 0)
 		alloc.debugln("No space to give to peer", to)
 		return
@@ -603,54 +602,32 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	alloc.ring.GrantRangeToHost(start, end, to)
 }
 
-// considerNewSpaces iterates through ranges in the ring
-// and ensures we have spaces for them.  It only ever adds
-// new spaces, as the invariants in the ring ensure we never
-// have spaces taken away from us against our will.
-func (alloc *Allocator) considerNewSpaces() {
-	ownedRanges := alloc.ring.OwnedRanges()
-	for _, r := range ownedRanges {
-		size := utils.Subtract(r.End, r.Start)
-		s, exists := alloc.spaceSet.Get(r.Start)
-		if !exists {
-			alloc.debugf("Found new space [%s, %s)", r.Start, r.End)
-			alloc.spaceSet.AddSpace(&space.Space{Start: r.Start, Size: size})
-			continue
-		}
-
-		if s.Size < size {
-			alloc.debugf("Growing space starting at %s to %d", s.Start, size)
-			s.Grow(size)
-		}
-	}
-}
-
 func (alloc *Allocator) assertInvariants() {
 	// We need to ensure all ranges the ring thinks we own have
 	// a corresponding space in the space set, and vice versa
-	ranges := alloc.ring.OwnedRanges()
-	spaces := alloc.spaceSet.Spaces()
+	checkSpace := space.New()
+	checkSpace.AddRanges(alloc.ring.OwnedRanges())
+	ranges := checkSpace.OwnedRanges()
+	spaces := alloc.space.OwnedRanges()
 
 	utils.Assert(len(ranges) == len(spaces))
 
 	for i := 0; i < len(ranges); i++ {
 		r := ranges[i]
 		s := spaces[i]
-
-		rSize := utils.Subtract(r.End, r.Start)
-		utils.Assert(s.Start == r.Start && s.Size == rSize)
+		utils.Assert(s.Start == r.Start && s.End == r.End)
 	}
 }
 
 func (alloc *Allocator) reportFreeSpace() {
-	spaces := alloc.spaceSet.Spaces()
-	if len(spaces) == 0 {
+	ranges := alloc.ring.OwnedRanges()
+	if len(ranges) == 0 {
 		return
 	}
 
 	freespace := make(map[utils.Address]utils.Offset)
-	for _, s := range spaces {
-		freespace[s.Start] = s.NumFreeAddresses()
+	for _, r := range ranges {
+		freespace[r.Start] = alloc.space.NumFreeAddressesInRange(r.Start, r.End)
 	}
 	alloc.ring.ReportFree(freespace)
 }

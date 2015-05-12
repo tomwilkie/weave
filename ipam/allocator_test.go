@@ -54,7 +54,7 @@ func TestAllocFree(t *testing.T) {
 	alloc.ContainerDied(container2)
 	alloc.ContainerDied(container3)
 	alloc.String() // force sync-up after async call
-	wt.AssertEquals(t, alloc.spaceSet.NumFreeAddresses(), utils.Offset(spaceSize))
+	wt.AssertEquals(t, alloc.space.NumFreeAddresses(), utils.Offset(spaceSize))
 }
 
 func TestBootstrap(t *testing.T) {
@@ -133,6 +133,7 @@ func TestAllocatorClaim(t *testing.T) {
 
 	// Now free the first one, and try to claim it
 	wt.AssertSuccess(t, alloc.Free(container1))
+	t.Log(alloc)
 	err := alloc.Claim(container3, addr1, nil)
 	wt.AssertNoErr(t, err)
 	_, addr3 := alloc.Allocate(container3, nil)
@@ -182,7 +183,7 @@ func TestCancel(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Use up all the IPs that alloc1 owns, so the allocation after this will prompt a request to alloc2
-	for i := 0; alloc1.spaceSet.NumFreeAddresses() > 0; i++ {
+	for i := 0; alloc1.space.NumFreeAddresses() > 0; i++ {
 		alloc1.Allocate(fmt.Sprintf("tmp%d", i), nil)
 	}
 
@@ -251,7 +252,7 @@ func TestTransfer(t *testing.T) {
 	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc2.ourName.String()))
 	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc3.ourName.String()))
 
-	wt.AssertEquals(t, alloc1.spaceSet.NumFreeAddresses(), utils.Offset(1022))
+	wt.AssertEquals(t, alloc1.space.NumFreeAddresses(), utils.Offset(1022))
 
 	ok, _ = alloc1.Allocate("foo", nil)
 	wt.AssertTrue(t, ok, "Failed to get address")

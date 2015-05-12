@@ -7,17 +7,9 @@ import (
 	"time"
 
 	"github.com/weaveworks/weave/common"
-	"github.com/weaveworks/weave/ipam/space"
-	"github.com/weaveworks/weave/ipam/utils"
 	"github.com/weaveworks/weave/router"
 	wt "github.com/weaveworks/weave/testing"
 )
-
-// Utility function to set up initial conditions for test
-func (alloc *Allocator) addSpace(startAddr string, length utils.Offset) *Allocator {
-	alloc.spaceSet.AddSpace(&space.Space{Start: utils.ParseIP(startAddr), Size: length})
-	return alloc
-}
 
 type mockMessage struct {
 	dst     router.PeerName
@@ -150,7 +142,7 @@ func (alloc *Allocator) claimRingForTesting(allocs ...*Allocator) {
 		peers = append(peers, alloc2.ourName)
 	}
 	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
-	alloc.considerNewSpaces()
+	alloc.space.AddRanges(alloc.ring.OwnedRanges())
 }
 
 // Check whether or not something was sent on a channel

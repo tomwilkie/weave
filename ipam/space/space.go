@@ -1,171 +1,253 @@
 package space
 
 import (
+	"bytes"
 	"fmt"
-	"math"
+	"sort"
 
 	"github.com/weaveworks/weave/ipam/utils"
-	"golang.org/x/tools/container/intsets"
 )
 
-// Space repsents a range of addresses owned by this peer,
-// and contains the state for managing free addresses.
+type Addr utils.Address
+
 type Space struct {
-	Start utils.Address
-	Size  utils.Offset
-	inuse intsets.Sparse
+	// ours and free represent a set of addresses as a sorted
+	// sequences of ranges.  Even elements give the inclusive
+	// starting points of ranges, and odd elements give the
+	// exclusive ending points.  Ranges in an array do not
+	// overlap, and neighbouring ranges are always coalesced if
+	// possible, so the arrays consist of sorted Addrs without
+	// repetition.
+	ours []utils.Address
+	free []utils.Address
 }
 
-const MaxSize = math.MaxInt32 // intsets.Sparse uses 'int' for indexing, so assume it might be 32-bit
-
-func (space *Space) assertInvariants() {
-	utils.Assert(space.inuse.Max() < int(space.Size))
+func New() *Space {
+	return &Space{}
 }
 
-func (space *Space) contains(addr utils.Address) bool {
-	return addr >= space.Start && utils.Offset(addr-space.Start) < space.Size
-}
-
-// Claim marks an address as allocated on behalf of some specific container
-func (space *Space) Claim(addr utils.Address) (bool, error) {
-	if !space.contains(addr) {
-		return false, nil
+func assert(cond bool) {
+	if !cond {
+		panic("assertion failed")
 	}
-	space.inuse.Insert(int(addr - space.Start))
-	return true, nil
 }
 
-// Allocate returns the lowest availible IP within this space.
-func (space *Space) Allocate() (bool, utils.Address) {
-	space.assertInvariants()
-	defer space.assertInvariants()
+func (s *Space) Add(start utils.Address, size utils.Offset) {
+	s.free = add(s.free, start, utils.Add(start, size))
+}
 
-	// Find the lowest available address - would be better if intsets.Sparse did this internally
-	var offset utils.Offset = 0
-	for ; offset < space.Size; offset++ {
-		if !space.inuse.Has(int(offset)) {
-			break
-		}
-	}
-	if offset >= space.Size { // out of space
+// Clear removes all spaces from this space set.  Used during node shutdown.
+func (s *Space) Clear() {
+	s.free = s.free[:0]
+	s.ours = s.ours[:0]
+}
+
+func (s *Space) Allocate() (bool, utils.Address) {
+	if len(s.free) == 0 {
 		return false, 0
+	} else {
+		res := s.free[0]
+		s.ours = add(s.ours, res, res+1)
+		s.free = subtract(s.free, res, res+1)
+		return true, res
 	}
-
-	space.inuse.Insert(int(offset))
-	return true, utils.Add(space.Start, offset)
 }
 
-// Free takes an IP in this space and record it as avalible.
-func (space *Space) Free(addr utils.Address) error {
-	space.assertInvariants()
-	defer space.assertInvariants()
-
-	if !space.contains(addr) {
-		return fmt.Errorf("Free out of range: %s", addr.String())
+func (s *Space) Claim(addr utils.Address) error {
+	if !contains(s.free, addr) {
+		return fmt.Errorf("Address %v is not free to claim", addr)
 	}
 
-	offset := utils.Subtract(addr, space.Start)
-	if !space.inuse.Has(int(offset)) {
-		return fmt.Errorf("Freeing address that is not in use: %s", addr.String())
-	}
-	space.inuse.Remove(int(offset))
-
+	s.ours = add(s.ours, addr, addr+1)
+	s.free = subtract(s.free, addr, addr+1)
 	return nil
 }
 
-// assertFree asserts that the size consequtive IPs from start
-// (inclusive) are not allocated
-func (space *Space) assertFree(start utils.Address, size utils.Offset) {
-	utils.Assert(space.contains(start))
-	utils.Assert(space.contains(utils.Add(start, size-1)))
-
-	startOffset := int(utils.Subtract(start, space.Start))
-	if startOffset > space.inuse.Max() { // Anything beyond this is free
-		return
+func (s *Space) NumFreeAddresses() utils.Offset {
+	res := utils.Offset(0)
+	for i := 0; i < len(s.free); i += 2 {
+		res += utils.Subtract(s.free[i+1], s.free[i])
 	}
-
-	for i := startOffset; i < startOffset+int(size); i++ {
-		utils.Assert(!space.inuse.Has(i))
-	}
+	return res
 }
 
-// BiggestFreeChunk scans the in-use list and returns the
-// start, length of the largest free range of address it
-// can find.  Length zero means it couldn't find any free space.
-func (space *Space) BiggestFreeChunk() (utils.Address, utils.Offset) {
-	space.assertInvariants()
-	defer space.assertInvariants()
-
-	if space.inuse.IsEmpty() { // Check to avoid Max() returning MinInt below
-		return space.Start, space.Size
-	}
-
-	// Keep a track of the current chunk start and size
-	// First chunk we've found is the one of unallocated space at the end
-	max := space.inuse.Max()
-	chunkStart := utils.Offset(max) + 1
-	chunkSize := space.Size - chunkStart
-
-	// Now scan the free list to find other chunks
-	for i := 0; i < max; i++ {
-		potentialStart := i
-		// Run forward past all the free ones
-		for i < max && !space.inuse.Has(i) {
-			i++
+func (s *Space) NumFreeAddressesInRange(start, end utils.Address) utils.Offset {
+	res := utils.Offset(0)
+	for i := 0; i < len(s.free); i += 2 {
+		s, e := s.free[i], s.free[i+1]
+		if s < start {
+			s = start
 		}
-		// Is the chunk we found bigger than the
-		// one we already have?
-		potentialSize := utils.Offset(i - potentialStart)
-		if potentialSize > chunkSize {
-			chunkStart = utils.Offset(potentialStart)
-			chunkSize = potentialSize
+		if e > end {
+			e = end
 		}
+		if s >= e {
+			continue
+		}
+		res += utils.Subtract(e, s)
+	}
+	return res
+}
+
+func (s *Space) Free(addr utils.Address) error {
+	if !contains(s.ours, addr) {
+		return fmt.Errorf("Address %v is not ours", addr)
+	}
+	if contains(s.free, addr) {
+		return fmt.Errorf("Address %v is already free", addr)
 	}
 
-	// Now return what we found
-	if chunkSize == 0 {
-		return 0, 0
-	}
-
-	addr := utils.Add(space.Start, chunkStart)
-	space.assertFree(addr, chunkSize)
-	return addr, chunkSize
+	s.ours = subtract(s.ours, addr, addr+1)
+	s.free = add(s.free, addr, addr+1)
+	return nil
 }
 
-// Grow increases the size of this space to size.
-func (space *Space) Grow(size utils.Offset) {
-	utils.Assert(space.Size < size)
-	space.Size = size
-}
+func (s *Space) biggestFreeRange() (int, utils.Offset) {
+	pos := -1
+	biggest := utils.Offset(0)
 
-// NumFreeAddresses returns the total number of free addresses in
-// this space.
-func (space *Space) NumFreeAddresses() utils.Offset {
-	return space.Size - utils.Offset(space.inuse.Len())
-}
-
-func (space *Space) String() string {
-	return fmt.Sprintf("%s+%d (%d)", space.Start.String(), space.Size, space.inuse.Len())
-}
-
-// Split divide this space into two new spaces at a given address, copying allocations and frees.
-func (space *Space) Split(addr utils.Address) (*Space, *Space) {
-	utils.Assert(space.contains(addr))
-	breakpoint := utils.Subtract(addr, space.Start)
-	ret1 := &Space{Start: space.Start, Size: breakpoint}
-	ret2 := &Space{Start: addr, Size: space.Size - breakpoint}
-
-	// Now copy the in-use list - this implementation is slow but simple
-	max := space.inuse.Max()
-	for i := 0; i <= max; i++ {
-		if space.inuse.Has(i) {
-			if i < int(breakpoint) {
-				ret1.inuse.Insert(i)
-			} else {
-				ret2.inuse.Insert(i - int(breakpoint))
-			}
+	for i := 0; i < len(s.free); i += 2 {
+		size := utils.Subtract(s.free[i+1], s.free[i])
+		if size >= biggest {
+			pos = i
+			biggest = size
 		}
 	}
+	return pos, biggest
+}
 
-	return ret1, ret2
+func (s *Space) Donate() (utils.Address, utils.Offset, bool) {
+	if len(s.free) == 0 {
+		return 0, 0, false
+	}
+
+	pos, biggest := s.biggestFreeRange()
+
+	// Donate half of that biggest free range, rounding up so
+	// that the donation can't be empty
+	end := s.free[pos+1]
+	start := end - utils.Address((biggest+1)/2)
+
+	s.ours = subtract(s.ours, start, end)
+	s.free = subtract(s.free, start, end)
+	return start, utils.Subtract(end, start), true
+}
+
+func firstGreater(a []utils.Address, x utils.Address) int {
+	return sort.Search(len(a), func(i int) bool { return a[i] > x })
+}
+
+func firstGreaterOrEq(a []utils.Address, x utils.Address) int {
+	return sort.Search(len(a), func(i int) bool { return a[i] >= x })
+}
+
+// Do the ranges contain the given address?
+func contains(addrs []utils.Address, addr utils.Address) bool {
+	return firstGreater(addrs, addr)&1 != 0
+}
+
+// Take the union of the range [start, end) with the ranges in the array
+func add(addrs []utils.Address, start utils.Address, end utils.Address) []utils.Address {
+	return addSub(addrs, start, end, 0)
+}
+
+// Subtract the range [start, end) from the ranges in the array
+func subtract(addrs []utils.Address, start utils.Address, end utils.Address) []utils.Address {
+	return addSub(addrs, start, end, 1)
+}
+
+func addSub(addrs []utils.Address, start utils.Address, end utils.Address, sense int) []utils.Address {
+	start_pos := firstGreaterOrEq(addrs, start)
+	end_pos := firstGreater(addrs[start_pos:], end) + start_pos
+
+	// Boundaries up to start_pos are unaffected
+	res := make([]utils.Address, start_pos, len(addrs)+2)
+	copy(res, addrs)
+
+	// Include start and end as new boundaries if they lie
+	// outside/inside existing ranges (according to sense).
+	if start_pos&1 == sense {
+		res = append(res, start)
+	}
+
+	if end_pos&1 == sense {
+		res = append(res, end)
+	}
+
+	// Boundaries after end_pos are unaffected
+	return append(res, addrs[end_pos:]...)
+}
+
+func (s *Space) String() string {
+	var buf bytes.Buffer
+	if len(s.ours) > 0 {
+		fmt.Fprint(&buf, "owned:")
+		for i := 0; i < len(s.ours); i += 2 {
+			fmt.Fprintf(&buf, " %s+%d ", s.ours[i], s.ours[i+1]-s.ours[i])
+		}
+	}
+	if len(s.free) > 0 {
+		fmt.Fprintf(&buf, "free:")
+		for i := 0; i < len(s.free); i += 2 {
+			fmt.Fprintf(&buf, " %s+%d ", s.free[i], s.free[i+1]-s.free[i])
+		}
+	}
+	if len(s.ours) == 0 && len(s.free) == 0 {
+		fmt.Fprintf(&buf, "No address ranges owned")
+	}
+	return buf.String()
+}
+
+type addressSlice []utils.Address
+
+func (p addressSlice) Len() int           { return len(p) }
+func (p addressSlice) Less(i, j int) bool { return p[i] < p[j] }
+func (p addressSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
+func (s *Space) assertInvariants() {
+	utils.Assert(sort.IsSorted(addressSlice(s.ours)))
+	utils.Assert(sort.IsSorted(addressSlice(s.free)))
+}
+
+// Return a slice representing everything we own, whether it is free or not
+func (s *Space) everything() []utils.Address {
+	a := make([]utils.Address, len(s.ours))
+	copy(a, s.ours)
+	for i := 0; i < len(s.free); i += 2 {
+		a = add(a, s.free[i], s.free[i+1])
+	}
+	return a
+}
+
+// OwnedRanges returns slice of Ranges, ordered by IP, gluing together
+// contiguous sequences of owned and free addresses
+func (s *Space) OwnedRanges() []utils.Range {
+	everything := s.everything()
+	result := make([]utils.Range, len(everything)/2)
+	for i := 0; i < len(everything); i += 2 {
+		result[i/2] = utils.Range{Start: everything[i], End: everything[i+1]}
+	}
+	return result
+}
+
+// Create a Space that has free space in all the supplied Ranges.
+func (s *Space) AddRanges(ranges []utils.Range) {
+	for _, r := range ranges {
+		s.free = add(s.free, r.Start, r.End)
+	}
+}
+
+// Taking ranges to be a set of all space we should own, add in any excess as free space
+func (s *Space) UpdateRanges(ranges []utils.Range) {
+	new := []utils.Address{}
+	for _, r := range ranges {
+		new = add(new, r.Start, r.End)
+	}
+	current := s.everything()
+	for i := 0; i < len(current); i += 2 {
+		new = subtract(new, current[i], current[i+1])
+	}
+	for i := 0; i < len(new); i += 2 {
+		s.free = add(s.free, new[i], new[i+1])
+	}
 }

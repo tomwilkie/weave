@@ -29,7 +29,7 @@ func (g *allocate) Try(alloc *Allocator) bool {
 		return true
 	}
 
-	if ok, addr := alloc.spaceSet.Allocate(); ok {
+	if ok, addr := alloc.space.Allocate(); ok {
 		alloc.debugln("Allocated", addr, "for", g.ident)
 		alloc.addOwned(g.ident, addr)
 		g.resultChan <- allocateResult{true, addr}

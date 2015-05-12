@@ -206,7 +206,7 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 	r.Entries.insert(entry{Token: end, Peer: r.Peername, Free: endFree})
 }
 
-// Merge the given ring into this ring.
+// Merge the given ring into this ring and return any new ranges added
 func (r *Ring) merge(gossip Ring) error {
 	r.assertInvariants()
 	defer r.assertInvariants()
@@ -313,50 +313,41 @@ func (r *Ring) Empty() bool {
 	return len(r.Entries) == 0
 }
 
-// Range is the return type for OwnedRanges.
-// NB will never have End < Start
-type Range struct {
-	Start, End utils.Address // [Start, End) of range I own
+// Given a slice of ranges which are all in the right order except
+// possibly the last one spans zero, fix that up and return the slice
+func (r *Ring) splitRangesOverZero(ranges []utils.Range) []utils.Range {
+	if len(ranges) == 0 {
+		return ranges
+	}
+	lastRange := ranges[len(ranges)-1]
+	// if end token == start (ie last) entry on ring, we want to actually use r.End
+	if lastRange.End == r.Start {
+		ranges[len(ranges)-1].End = r.End
+	} else if lastRange.End <= lastRange.Start {
+		// We wrapped; want to split around 0
+		// First shuffle everything up as we want results to be sorted
+		ranges = append(ranges, utils.Range{})
+		copy(ranges[1:], ranges[:len(ranges)-1])
+		ranges[0] = utils.Range{Start: r.Start, End: lastRange.End}
+		ranges[len(ranges)-1].End = r.End
+	}
+	return ranges
 }
 
 // OwnedRanges returns slice of Ranges, ordered by IP, indicating which
 // ranges are owned by this peer.  Will split ranges which
 // span 0 in the ring.
-func (r *Ring) OwnedRanges() []Range {
-	var (
-		result []Range
-	)
+func (r *Ring) OwnedRanges() (result []utils.Range) {
 	r.assertInvariants()
 
 	for i, entry := range r.Entries {
-		if entry.Peer != r.Peername {
-			continue
-		}
-
-		// next logical token in ring; be careful of
-		// wrapping the index
-		nextEntry := r.Entries.entry(i + 1)
-
-		switch {
-		case nextEntry.Token == r.Start:
-			// be careful here; if end token == start (ie last)
-			// entry on ring, we want to actually use r.End
-			result = append(result, Range{Start: entry.Token, End: r.End})
-
-		case nextEntry.Token <= entry.Token:
-			// We wrapped; want to split around 0
-			// First shuffle everything up as we want results to be sorted
-			result = append(result, Range{})
-			copy(result[1:], result[:len(result)-1])
-			result[0] = Range{Start: r.Start, End: nextEntry.Token}
-			result = append(result, Range{Start: entry.Token, End: r.End})
-
-		default:
-			result = append(result, Range{Start: entry.Token, End: nextEntry.Token})
+		if entry.Peer == r.Peername {
+			nextEntry := r.Entries.entry(i + 1)
+			result = append(result, utils.Range{Start: entry.Token, End: nextEntry.Token})
 		}
 	}
 
-	return result
+	return r.splitRangesOverZero(result)
 }
 
 // ClaimForPeers claims the entire ring for the array of peers passed
@@ -509,26 +500,29 @@ func (r *Ring) PickPeerForTransfer() router.PeerName {
 }
 
 // Transfer will mark all entries associated with 'from' peer as owned by 'to' peer
-func (r *Ring) Transfer(from, to router.PeerName) error {
+// and return ranges indicating the new space we picked up
+func (r *Ring) Transfer(from, to router.PeerName) (error, []utils.Range) {
 	r.assertInvariants()
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
 
+	var newRanges []utils.Range
 	found := false
 
-	for _, entry := range r.Entries {
+	for i, entry := range r.Entries {
 		if entry.Peer == from {
 			found = true
 			entry.Peer = to
 			entry.Version++
+			newRanges = append(newRanges, utils.Range{Start: entry.Token, End: r.Entries.entry(i + 1).Token})
 		}
 	}
 
 	if !found {
-		return ErrNotFound
+		return ErrNotFound, nil
 	}
 
-	return nil
+	return nil, r.splitRangesOverZero(newRanges)
 }
 
 // Contains returns true if addr is in this ring

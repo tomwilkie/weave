@@ -48,7 +48,7 @@ func (c *claim) Try(alloc *Allocator) bool {
 		return true
 	}
 	if existingIdent == "" {
-		err := alloc.spaceSet.Claim(c.addr)
+		err := alloc.space.Claim(c.addr)
 		if err != nil {
 			c.resultChan <- err
 			return true

@@ -419,48 +419,27 @@ func TestSplitRangeAtBeginning(t *testing.T) {
 	wt.AssertSuccess(t, ring2.merge(*ring1))
 }
 
-func (r1 Range) Equal(r2 Range) bool {
-	return r1.Start == r2.Start && r1.End == r2.End
-}
-
-func RangesEqual(rs1 []Range, rs2 []Range) bool {
-	if len(rs1) != len(rs2) {
-		return false
-	}
-
-	for i := 0; i < len(rs1); i++ {
-		if !rs1[i].Equal(rs2[i]) {
-			return false
-		}
-	}
-
-	return true
-}
-
 func TestOwnedRange(t *testing.T) {
 	ring1 := New(start, end, peer1name)
 	ring1.ClaimItAll()
 
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(),
-		[]Range{{Start: start, End: end}}), "invalid")
+	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{Start: start, End: end}})
 
 	ring1.GrantRangeToHost(middle, end, peer2name)
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(),
-		[]Range{{Start: start, End: middle}}), "invalid")
+	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{Start: start, End: middle}})
 
 	ring2 := New(start, end, peer2name)
 	ring2.merge(*ring1)
-	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
-		[]Range{{Start: middle, End: end}}), "invalid")
+	wt.AssertEquals(t, ring2.OwnedRanges(), []utils.Range{{Start: middle, End: end}})
 
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}}
-	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
-		[]Range{{Start: start, End: middle}, {Start: middle, End: end}}), "invalid")
+	wt.AssertEquals(t, ring2.OwnedRanges(),
+		[]utils.Range{{Start: start, End: middle}, {Start: middle, End: end}})
 
 	ring2.Entries = []*entry{{Token: dot10, Peer: peer2name}, {Token: middle, Peer: peer2name}}
-	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
-		[]Range{{Start: start, End: dot10}, {Start: dot10, End: middle},
-			{Start: middle, End: end}}), "invalid")
+	wt.AssertEquals(t, ring2.OwnedRanges(),
+		[]utils.Range{{Start: start, End: dot10}, {Start: dot10, End: middle},
+			{Start: middle, End: end}})
 }
 
 func TestTransfer(t *testing.T) {
@@ -469,7 +448,7 @@ func TestTransfer(t *testing.T) {
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(middle, end, peer2name)
 	ring1.Transfer(peer2name, peer1name)
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{start, middle}, {middle, end}}), "Invalid")
+	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{start, middle}, {middle, end}})
 
 	// Second test is what happens when a token exists at the end of a range but is transferred
 	// - does it get resurrected correctly?
@@ -478,7 +457,7 @@ func TestTransfer(t *testing.T) {
 	ring1.GrantRangeToHost(middle, end, peer2name)
 	ring1.Transfer(peer2name, peer1name)
 	ring1.GrantRangeToHost(dot10, middle, peer2name)
-	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{start, dot10}, {middle, end}}), "Invalid")
+	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{start, dot10}, {middle, end}})
 }
 
 func TestOwner(t *testing.T) {
@@ -627,7 +606,7 @@ func TestFuzzRingHard(t *testing.T) {
 
 	// Keep a map of index -> ranges, as these are a little expensive to
 	// calculate for every ring on every iteration.
-	var theRanges = make(map[int][]Range)
+	var theRanges = make(map[int][]utils.Range)
 	theRanges[0] = rings[0].OwnedRanges()
 
 	addOrRmPeer := func() {
@@ -640,7 +619,7 @@ func TestFuzzRingHard(t *testing.T) {
 		// Remove peer from our state
 		peers = append(peers[:peerIndex], peers[peerIndex+1:]...)
 		rings = append(rings[:peerIndex], rings[peerIndex+1:]...)
-		theRanges = make(map[int][]Range)
+		theRanges = make(map[int][]utils.Range)
 
 		// Transfer the space for this peer on another peer, but not this one
 		_, otherPeername, otherRing := randomPeer(peerIndex)
