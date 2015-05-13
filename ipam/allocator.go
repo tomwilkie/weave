@@ -91,8 +91,7 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, subnetCIDR str
 	return alloc, nil
 }
 
-// OnNewPeer is part of the NewPeerWatcher interface, and is called by the
-// code in router.Peers for every new peer found.
+// OnNewPeer is called by router.Peers for every new peer found.
 func (alloc *Allocator) OnNewPeer(uid router.PeerName, nickname string) {
 	alloc.actionChan <- func() {
 		alloc.otherPeerNicknames[uid] = nickname

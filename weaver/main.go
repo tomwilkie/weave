@@ -134,6 +134,7 @@ func main() {
 	if httpAddr != "" {
 		if iprangeCIDR != "" {
 			allocator := createAllocator(router, apiPath, iprangeCIDR, determineQuorum(quorum, peers))
+
 			go handleHTTP(router, httpAddr, allocator)
 		} else {
 			if quorum > 0 {
@@ -195,7 +196,7 @@ func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string, q
 	if err != nil {
 		log.Fatal("Unable to start watcher", err)
 	}
-	router.Peers.AddNewPeerFunc(func(peer *weave.Peer) {
+	router.Peers.SetNewPeerFunc(func(peer *weave.Peer) {
 		allocator.OnNewPeer(peer.Name, peer.NickName)
 	})
 	return allocator
