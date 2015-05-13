@@ -50,7 +50,7 @@ func main() {
 		bufSzMB     int
 		httpAddr    string
 		iprangeCIDR string
-		quorum      int
+		peerCount   int
 		apiPath     string
 	)
 
@@ -67,7 +67,7 @@ func main() {
 	flag.IntVar(&bufSzMB, "bufsz", 8, "capture buffer size in MB")
 	flag.StringVar(&httpAddr, "httpaddr", fmt.Sprintf(":%d", weave.HTTPPort), "address to bind HTTP interface to (disabled if blank, absolute path indicates unix domain socket)")
 	flag.StringVar(&iprangeCIDR, "iprange", "", "IP address range to allocate within, in CIDR notation")
-	flag.IntVar(&quorum, "quorum", 0, "quorum size for IP address allocation")
+	flag.IntVar(&peerCount, "initpeercount", 0, "number of peers in network (for IP address allocation)")
 	flag.StringVar(&apiPath, "api", "unix:///var/run/docker.sock", "Path to Docker API socket")
 	flag.Parse()
 	peers = flag.Args()
@@ -132,10 +132,10 @@ func main() {
 	var allocator *ipam.Allocator
 	if httpAddr != "" {
 		if iprangeCIDR != "" {
-			allocator = createAllocator(router, apiPath, iprangeCIDR, determineQuorum(quorum, peers))
+			allocator = createAllocator(router, apiPath, iprangeCIDR, determineQuorum(peerCount, peers))
 		} else {
-			if quorum > 0 {
-				log.Fatal("-quorum flag specified without -iprange")
+			if peerCount > 0 {
+				log.Fatal("-initpeercount flag specified without -iprange")
 			}
 		}
 	}
@@ -206,9 +206,9 @@ func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string, q
 
 // Pick a quorum size heuristically based on the number of peer
 // addresses passed.
-func determineQuorum(quorumFlag int, peers []string) uint {
-	if quorumFlag > 0 {
-		return uint(quorumFlag)
+func determineQuorum(initPeerCountFlag int, peers []string) uint {
+	if initPeerCountFlag > 0 {
+		return uint(initPeerCountFlag/2 + 1)
 	}
 
 	// Guess a suitable quorum size based on the list of peer

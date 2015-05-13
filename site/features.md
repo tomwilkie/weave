@@ -70,8 +70,21 @@ an address automatically if none is specified, i.e.:
 Weave uses the Docker Events API to learn when a container has exited
 and hence can release its IP address.
 
-You must specify the same range with `-iprange` on each host, and you
-cannot mix weaves started with and without -iprange.
+Weave shares the IP range across all peers, dynamically according to
+their needs.  If a group of peers becomes isolated from the rest (a
+partition), they can continue to work with the IP ranges they had
+before isolation, and can be re-connected to the rest of the network
+and carry on. Note that you must specify the same range with
+`-iprange` on each host, and you cannot mix weaves started with and
+without -iprange.
+
+Just once, when you start up the whole network, weave needs a majority
+of peers to agree in order to avoid isolated groups starting off
+inconsistently. Therefore, you must either supply the list of all
+peers in the network to `weave launch` or add the `-initpeercount`
+flag to specify how many peers there will be.  It isn't a problem to
+over-estimate by a bit, but if you supply a number that is too small
+then multiple independent groups may form.
 
 You may wish to `weave stop` and re-launch to change some config or to
 upgrade to a new version; provided the underlying protocol hasn't
