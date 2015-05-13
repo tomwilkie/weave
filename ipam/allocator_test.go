@@ -58,7 +58,7 @@ func TestAllocFree(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		donateSize     = 5
 		donateStart    = "10.0.1.7"
@@ -153,7 +153,7 @@ func (alloc *Allocator) pause() func() {
 }
 
 func TestCancel(t *testing.T) {
-	//common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		CIDR = "10.0.1.7/26"
 	)
@@ -264,7 +264,7 @@ func TestTransfer(t *testing.T) {
 }
 
 func TestFakeRouterSimple(t *testing.T) {
-	common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		cidr = "10.0.1.7/22"
 	)
@@ -280,7 +280,7 @@ func TestFakeRouterSimple(t *testing.T) {
 }
 
 func TestAllocatorFuzz(t *testing.T) {
-	//common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		firstpass    = 1000
 		secondpass   = 5000
