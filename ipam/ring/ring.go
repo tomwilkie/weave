@@ -124,14 +124,11 @@ func (r *Ring) distance(start, end utils.Address) utils.Offset {
 
 // GrantRangeToHost modifies the ring such that range [start, end)
 // is assigned to peer.  This may insert up to two new tokens.
-// Note, due to wrapping, end can be less than start
 // Preconditions:
 // - start < end
 // - [start, end) must be owned by the calling peer
 func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) {
 	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, start, end, peer)
-
-	var length = r.distance(start, end)
 
 	r.assertInvariants()
 	defer r.assertInvariants()
@@ -139,10 +136,10 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 
 	// ----------------- Start of Checks -----------------
 
+	utils.Assert(start < end)
 	utils.Assert(r.Start <= start && start < r.End)
 	utils.Assert(r.Start < end && end <= r.End)
 	utils.Assert(len(r.Entries) > 0)
-	utils.Assert(length > 0)
 
 	// Look for the left-most entry greater than start, then go one previous
 	// to get the right-most entry less than or equal to start
@@ -158,9 +155,9 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 
 	// ----------------- End of Checks -----------------
 
-	// Free space at start is max(length, distance to next token)
+	// Free space at start is max(length of range, distance to next token)
 	startFree := r.distance(start, r.Entries.entry(preceedingPos+1).Token)
-	if startFree > length {
+	if length := r.distance(start, end); startFree > length {
 		startFree = length
 	}
 	// Is there already a token at start, update it
