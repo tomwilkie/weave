@@ -62,7 +62,7 @@ addresses to allocate from, for example:
 
     host1# weave launch -iprange 10.2.3.0/24
 
-The `run`, `start`, `attach` and `expose` commands will then allocate
+The `run`, `start`, `attach`, `expose` and `hide` commands will then fetch
 an address automatically if none is specified, i.e.:
 
     host1# D=$(weave run -t -i ubuntu)
