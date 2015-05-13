@@ -150,7 +150,7 @@ func TestGrantSplit(t *testing.T) {
 
 	// Now grant a split range to peer2
 	ring1.GrantRangeToHost(dot10, dot245, peer2name)
-	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Version: 1, Free: 10},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer2name, Free: 235},
 		{Token: dot245, Peer: peer1name, Free: 10}})
 }
@@ -164,7 +164,7 @@ func TestMergeSimple(t *testing.T) {
 	ring1.GrantRangeToHost(middle, end, peer2name)
 	wt.AssertSuccess(t, ring2.merge(*ring1))
 
-	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Version: 1, Free: 128},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Free: 128, Version: 1},
 		{Token: middle, Peer: peer2name, Free: 127}})
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
@@ -177,7 +177,7 @@ func TestMergeSimple(t *testing.T) {
 	wt.AssertSuccess(t, ring1.merge(*ring2))
 
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Free: 128, Version: 2},
-		{Token: middle, Peer: peer1name, Version: 1, Free: 127}})
+		{Token: middle, Peer: peer1name, Free: 127, Version: 1}})
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 }
 
@@ -272,11 +272,11 @@ func TestMergeSplit(t *testing.T) {
 
 	// Now grant a split range to peer1
 	ring2.GrantRangeToHost(dot10, dot245, peer1name)
-	wt.AssertEquals(t, ring2.Entries, entries{{Token: start, Peer: peer2name, Version: 1, Free: 10},
+	wt.AssertEquals(t, ring2.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 10}})
 	wt.AssertSuccess(t, ring1.merge(*ring2))
-	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Version: 1, Free: 10},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 10}})
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
@@ -293,11 +293,11 @@ func TestMergeSplit2(t *testing.T) {
 
 	// Now grant a split range to peer1
 	ring2.GrantRangeToHost(dot10, dot245, peer1name)
-	wt.AssertEquals(t, ring2.Entries, entries{{Token: start, Peer: peer2name, Version: 1, Free: 10},
+	wt.AssertEquals(t, ring2.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 5}, {Token: dot250, Peer: peer2name, Free: 5}})
 	wt.AssertSuccess(t, ring1.merge(*ring2))
-	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Version: 1, Free: 10},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 5}, {Token: dot250, Peer: peer2name, Free: 5}})
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
