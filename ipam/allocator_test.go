@@ -439,3 +439,15 @@ func TestAllocatorFuzz(t *testing.T) {
 		}
 	})
 }
+
+func TestGossipSkew(t *testing.T) {
+	alloc1 := makeAllocatorWithMockGossip(t, "01:00:00:01:00:00", "10.0.1.0/22", 2)
+	defer alloc1.Stop()
+	alloc2 := makeAllocatorWithMockGossip(t, "02:00:00:02:00:00", "10.0.1.0/22", 2)
+	alloc2.now = func() time.Time { return time.Now().Add(time.Hour * 2) }
+	defer alloc2.Stop()
+
+	if _, err := alloc1.OnGossipBroadcast(alloc2.encode()); err == nil {
+		t.Fail()
+	}
+}

@@ -59,6 +59,7 @@ type Allocator struct {
 	paxos              paxos.Node
 	paxosTicker        *time.Ticker
 	shuttingDown       bool // to avoid doing any requests while trying to shut down
+	now                func() time.Time
 }
 
 // NewAllocator creates and initialises a new Allocator
@@ -86,6 +87,7 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, subnetCIDR str
 		ring:               ring.New(utils.Add(subnetStart, 1), utils.Add(subnetStart, subnetSize-1), ourName),
 		owned:              make(map[string]utils.Address),
 		otherPeerNicknames: make(map[router.PeerName]string),
+		now:                time.Now,
 	}
 	alloc.paxos.Init(ourName, ourUID, quorum)
 	return alloc, nil
@@ -348,12 +350,17 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error)
 }
 
 type gossipState struct {
+	// We send a timstamp along with the information to be
+	// gossipped in order to do detect skewed clocks
+	Now int64
+
 	Paxos paxos.GossipState
 	Ring  ring.GossipState
 }
 
 func (alloc *Allocator) encode() []byte {
 	var data gossipState
+	data.Now = alloc.now().Unix()
 	// We're only interested in Paxos until we have a Ring.
 	if alloc.ring.Empty() {
 		data.Paxos = alloc.paxos.GossipState()
@@ -554,6 +561,11 @@ func (alloc *Allocator) update(msg []byte) error {
 
 	if err := decoder.Decode(&data); err != nil {
 		return err
+	}
+
+	deltat := time.Unix(data.Now, 0).Sub(alloc.now())
+	if deltat > time.Hour || -deltat > time.Hour {
+		return fmt.Errorf("clock skew of %v detected, ignoring update", deltat)
 	}
 
 	// only one of Ring and Paxos should be present.  And we

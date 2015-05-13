@@ -10,21 +10,14 @@ import (
 	"io"
 	"math/rand"
 	"sort"
-	"time"
 
 	"github.com/weaveworks/weave/common"
 	"github.com/weaveworks/weave/ipam/utils"
 	"github.com/weaveworks/weave/router"
 )
 
-const maxClockSkew int64 = int64(time.Hour)
-
-// Hook for replacing for testing
-var now = func() int64 { return time.Now().Unix() }
-
 // Ring represents the ring itself
 type Ring struct {
-	Now        int64           // When we send this ring to someone we include the time to help detect clock skew
 	Start, End utils.Address   // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
 	Entries    entries         // list of entries sorted by token
@@ -50,7 +43,6 @@ var (
 	ErrTooMuchFreeSpace = errors.New("Entry reporting too much free space!")
 	ErrInvalidTimeout   = errors.New("dt must be greater than 0")
 	ErrNotFound         = errors.New("No entries for peer found")
-	ErrClockSkew        = errors.New("Large clock skew detected; refusing to merge.")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -278,11 +270,6 @@ func (r *Ring) merge(gossip Ring) error {
 
 // UpdateRing updates the ring with the state from another ring
 func (r *Ring) UpdateRing(gossipedRing GossipState) error {
-	skew := now() - gossipedRing.Now
-	if -maxClockSkew > skew || skew > maxClockSkew {
-		return ErrClockSkew
-	}
-
 	if err := r.merge(*gossipedRing); err != nil {
 		return err
 	}

@@ -326,19 +326,6 @@ func TestGossip(t *testing.T) {
 	assertRing(ring2, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 }
 
-func TestGossipSkew(t *testing.T) {
-	ring1 := New(start, end, peer1name)
-	ring2 := New(start, end, peer2name)
-	ring1.ClaimItAll()
-	wt.AssertSuccess(t, ring2.UpdateRing(ring1.GossipState()))
-
-	now = func() int64 { return 0 }
-	gossip := ring1.GossipState()
-
-	now = func() int64 { return 2 * maxClockSkew }
-	wt.AssertTrue(t, ring2.UpdateRing(gossip) == ErrClockSkew, "")
-}
-
 func TestFindFree(t *testing.T) {
 	ring1 := New(start, end, peer1name)
 
