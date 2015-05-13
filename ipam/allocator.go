@@ -592,7 +592,6 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	defer alloc.sendRequest(to, msgRingUpdate)
 
 	alloc.debugln("Peer", to, "asked me for space")
-	alloc.debugln(alloc.string())
 	start, size, ok := alloc.space.Donate()
 	if !ok {
 		free := alloc.space.NumFreeAddresses()
