@@ -129,8 +129,6 @@ func main() {
 
 	router := weave.NewRouter(config, name, nickName)
 	log.Println("Our name is", router.Ourself.FullName())
-	router.Start()
-	initiateConnections(router, peers)
 	if httpAddr != "" {
 		if iprangeCIDR != "" {
 			allocator := createAllocator(router, apiPath, iprangeCIDR, determineQuorum(quorum, peers))
@@ -147,6 +145,8 @@ func main() {
 	if httpAddr == "" || iprangeCIDR == "" {
 		router.NewGossip("IPallocation", &ipam.DummyAllocator{})
 	}
+	router.Start()
+	initiateConnections(router, peers)
 	handleSignals(router)
 }
 
