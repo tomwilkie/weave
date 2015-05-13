@@ -303,7 +303,9 @@ func (m *Model) validate() {
 			m.t.Fatal("Node doesn't know about consensus")
 		}
 
-		if m.nodes[i].firstConsensus.Origin != val.Origin {
+		firstConsensus := m.nodes[i].firstConsensus
+		if firstConsensus.Origin.valid() &&
+			firstConsensus.Origin != val.Origin {
 			//m.dump()
 			m.t.Fatal("Consensus mismatch")
 		}
@@ -316,10 +318,31 @@ func (m *Model) validate() {
 	}
 }
 
+func TestSingleNode(t *testing.T) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// Test the single node case
+	params := &TestParams{
+		nodeCount:     1,
+		connectedProb: 0,
+		reproposeProb: 0,
+		isolateProb:   0,
+		restartProb:   0,
+	}
+
+	m := makeRandomModel(params, r, t)
+
+	if !m.simulate(params) {
+		m.t.Fatal("Failed to converge")
+	}
+
+	m.validate()
+}
+
 func TestPaxos(t *testing.T) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	params := TestParams{
+	params := &TestParams{
 		nodeCount:     10,
 		connectedProb: 0.5,
 		reproposeProb: 0.01,
@@ -338,14 +361,12 @@ func TestPaxos(t *testing.T) {
 	}
 
 	for i := 0; i < 1000; i++ {
-		m := makeRandomModel(&params, r, t)
+		m := makeRandomModel(params, r, t)
 
-		if !m.simulate(&params) {
+		if !m.simulate(params) {
 			m.t.Fatal("Failed to converge")
 		}
 
 		m.validate()
 	}
-
-	t.Log("Done")
 }

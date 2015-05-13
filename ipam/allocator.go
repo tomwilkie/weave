@@ -538,7 +538,6 @@ func normalizeConsensus(consensus []router.PeerName) []router.PeerName {
 func (alloc *Allocator) propose() {
 	alloc.debugf("Paxos proposing")
 	alloc.paxos.Propose()
-	alloc.paxos.Think()
 	alloc.gossip.GossipBroadcast(alloc.Gossip())
 }
 

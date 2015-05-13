@@ -138,6 +138,11 @@ func (node *Node) Propose() {
 		Proposer: node.id,
 	}
 	node.knows[node.id] = ourClaims
+
+	// With a quorum of 1, we can immediately accept our proposal
+	if node.quorum == 1 {
+		node.Think()
+	}
 }
 
 // The heart of the consensus algorithm. Return true if we have
