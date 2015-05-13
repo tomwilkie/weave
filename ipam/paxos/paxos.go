@@ -88,21 +88,21 @@ func (node *Node) GossipState() GossipState {
 func (node *Node) Update(from GossipState) bool {
 	changed := false
 
-	for i, from_claims := range from {
+	for i, fromClaims := range from {
 		claims, ok := node.knows[i]
 		if ok {
-			if claims.Promise.precedes(from_claims.Promise) {
-				claims.Promise = from_claims.Promise
+			if claims.Promise.precedes(fromClaims.Promise) {
+				claims.Promise = fromClaims.Promise
 				changed = true
 			}
 
-			if claims.Accepted.precedes(from_claims.Accepted) {
-				claims.Accepted = from_claims.Accepted
-				claims.AcceptedVal = from_claims.AcceptedVal
+			if claims.Accepted.precedes(fromClaims.Accepted) {
+				claims.Accepted = fromClaims.Accepted
+				claims.AcceptedVal = fromClaims.AcceptedVal
 				changed = true
 			}
 		} else {
-			claims = from_claims
+			claims = fromClaims
 			changed = true
 		}
 
@@ -132,24 +132,24 @@ func (node *Node) Propose() {
 		round = max(round, claims.Accepted.Round)
 	}
 
-	our_claims := node.knows[node.id]
-	our_claims.Promise = ProposalID{
+	ourClaims := node.knows[node.id]
+	ourClaims.Promise = ProposalID{
 		Round:    round + 1,
 		Proposer: node.id,
 	}
-	node.knows[node.id] = our_claims
+	node.knows[node.id] = ourClaims
 }
 
 // The heart of the consensus algorithm. Return true if we have
 // changed our claims.
 func (node *Node) Think() bool {
-	our_claims := node.knows[node.id]
+	ourClaims := node.knows[node.id]
 
 	// The "Promise" step of Paxos: Copy the highest known
 	// promise.
 	for _, claims := range node.knows {
-		if our_claims.Promise.precedes(claims.Promise) {
-			our_claims.Promise = claims.Promise
+		if ourClaims.Promise.precedes(claims.Promise) {
+			ourClaims.Promise = claims.Promise
 		}
 	}
 
@@ -164,7 +164,7 @@ func (node *Node) Think() bool {
 	// supersedes our own proposal, then anyone who hears about
 	// that promise will not accept that proposal.  So our
 	// proposal is only in the running if it is also our promise.
-	if our_claims.Promise.Proposer == node.id {
+	if ourClaims.Promise.Proposer == node.id {
 		// Determine whether a quorum has promised, and the
 		// best previously-accepted value if there is one.
 		count := uint(0)
@@ -172,7 +172,7 @@ func (node *Node) Think() bool {
 		var acceptedVal AcceptedValue
 
 		for _, claims := range node.knows {
-			if claims.Promise == our_claims.Promise {
+			if claims.Promise == ourClaims.Promise {
 				count++
 
 				if accepted.precedes(claims.Accepted) {
@@ -185,32 +185,32 @@ func (node *Node) Think() bool {
 		if count >= node.quorum {
 			if !accepted.valid() {
 				acceptedVal.Value = node.pickValue()
-				acceptedVal.Origin = our_claims.Promise
+				acceptedVal.Origin = ourClaims.Promise
 			}
 
 			// We automatically accept our own proposal,
 			// and that's how we communicate the "accept
 			// request" to other nodes.
-			our_claims.Accepted = our_claims.Promise
-			our_claims.AcceptedVal = acceptedVal
+			ourClaims.Accepted = ourClaims.Promise
+			ourClaims.AcceptedVal = acceptedVal
 		}
 	}
 
 	// The "Accepted" step of Paxos: If the proposal we promised
 	// on got accepted by some other node, we accept it too.
 	for _, claims := range node.knows {
-		if claims.Accepted == our_claims.Promise {
-			our_claims.Accepted = claims.Accepted
-			our_claims.AcceptedVal = claims.AcceptedVal
+		if claims.Accepted == ourClaims.Promise {
+			ourClaims.Accepted = claims.Accepted
+			ourClaims.AcceptedVal = claims.AcceptedVal
 			break
 		}
 	}
 
-	if our_claims.equals(node.knows[node.id]) {
+	if ourClaims.equals(node.knows[node.id]) {
 		return false
 	}
 
-	node.knows[node.id] = our_claims
+	node.knows[node.id] = ourClaims
 	return true
 }
 
