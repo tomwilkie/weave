@@ -30,7 +30,7 @@ func (r *Ring) assertInvariants() {
 	}
 }
 
-// Errors returned by merge
+// Errors returned by Merge
 var (
 	ErrNotSorted        = errors.New("Ring not sorted")
 	ErrTokenRepeated    = errors.New("Token appears twice in ring")
@@ -187,7 +187,7 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 }
 
 // Merge the given ring into this ring and return any new ranges added
-func (r *Ring) merge(gossip Ring) error {
+func (r *Ring) Merge(gossip Ring) error {
 	r.assertInvariants()
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
@@ -266,21 +266,6 @@ func (r *Ring) merge(gossip Ring) error {
 
 	r.Entries = result
 	return nil
-}
-
-// UpdateRing updates the ring with the state from another ring
-func (r *Ring) UpdateRing(gossipedRing GossipState) error {
-	if err := r.merge(*gossipedRing); err != nil {
-		return err
-	}
-	return nil
-}
-
-type GossipState *Ring
-
-// GossipState returns the state of the ring to be encoded as gossip
-func (r *Ring) GossipState() GossipState {
-	return r
 }
 
 // Empty returns true if the ring has no entries

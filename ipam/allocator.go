@@ -355,7 +355,7 @@ type gossipState struct {
 	Now int64
 
 	Paxos paxos.GossipState
-	Ring  ring.GossipState
+	Ring  *ring.Ring
 }
 
 func (alloc *Allocator) encode() []byte {
@@ -365,7 +365,7 @@ func (alloc *Allocator) encode() []byte {
 	if alloc.ring.Empty() {
 		data.Paxos = alloc.paxos.GossipState()
 	} else {
-		data.Ring = alloc.ring.GossipState()
+		data.Ring = alloc.ring
 	}
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
@@ -572,7 +572,7 @@ func (alloc *Allocator) update(msg []byte) error {
 	// shouldn't get updates for a empty Ring. But tolerate
 	// them just in case.
 	if data.Ring != nil {
-		err = alloc.ring.UpdateRing(data.Ring)
+		err = alloc.ring.Merge(*data.Ring)
 		if !alloc.ring.Empty() {
 			alloc.ringUpdated()
 		}

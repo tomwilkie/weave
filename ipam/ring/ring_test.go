@@ -145,7 +145,7 @@ func TestGrantSplit(t *testing.T) {
 
 	// Claim everything for peer1
 	ring1.Entries = []*entry{{Token: start, Peer: peer1name, Free: 255}}
-	ring2.merge(*ring1)
+	ring2.Merge(*ring1)
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// Now grant a split range to peer2
@@ -162,19 +162,19 @@ func TestMergeSimple(t *testing.T) {
 	// Claim everything for peer1
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(middle, end, peer2name)
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Free: 128, Version: 1},
 		{Token: middle, Peer: peer2name, Free: 127}})
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// Now to two different operations on either side,
-	// check we can merge again
+	// check we can Merge again
 	ring1.GrantRangeToHost(start, middle, peer2name)
 	ring2.GrantRangeToHost(middle, end, peer1name)
 
-	wt.AssertSuccess(t, ring2.merge(*ring1))
-	wt.AssertSuccess(t, ring1.merge(*ring2))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
+	wt.AssertSuccess(t, ring1.Merge(*ring2))
 
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Free: 128, Version: 2},
 		{Token: middle, Peer: peer1name, Free: 127, Version: 1}})
@@ -182,32 +182,32 @@ func TestMergeSimple(t *testing.T) {
 }
 
 func TestMergeErrors(t *testing.T) {
-	// Cannot merge in an invalid ring
+	// Cannot Merge in an invalid ring
 	ring1 := New(start, end, peer1name)
 	ring2 := New(start, end, peer2name)
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}, {Token: start, Peer: peer2name}}
-	wt.AssertTrue(t, ring1.merge(*ring2) == ErrNotSorted, "Expected ErrNotSorted")
+	wt.AssertTrue(t, ring1.Merge(*ring2) == ErrNotSorted, "Expected ErrNotSorted")
 
-	// Should merge two rings for different ranges
+	// Should Merge two rings for different ranges
 	ring2 = New(start, middle, peer2name)
 	ring2.Entries = []*entry{}
-	wt.AssertTrue(t, ring1.merge(*ring2) == ErrDifferentSubnets, "Expected ErrDifferentSubnets")
+	wt.AssertTrue(t, ring1.Merge(*ring2) == ErrDifferentSubnets, "Expected ErrDifferentSubnets")
 
-	// Cannot merge newer version of entry I own
+	// Cannot Merge newer version of entry I own
 	ring2 = New(start, end, peer2name)
 	ring1.Entries = []*entry{{Token: start, Peer: peer1name}}
 	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Version: 1}}
-	wt.AssertTrue(t, ring1.merge(*ring2) == ErrNewerVersion, "Expected ErrNewerVersion")
+	wt.AssertTrue(t, ring1.Merge(*ring2) == ErrNewerVersion, "Expected ErrNewerVersion")
 
-	// Cannot merge two entries with same version but different hosts
+	// Cannot Merge two entries with same version but different hosts
 	ring1.Entries = []*entry{{Token: start, Peer: peer1name}}
 	ring2.Entries = []*entry{{Token: start, Peer: peer2name}}
-	wt.AssertTrue(t, ring1.merge(*ring2) == ErrInvalidEntry, "Expected ErrInvalidEntry")
+	wt.AssertTrue(t, ring1.Merge(*ring2) == ErrInvalidEntry, "Expected ErrInvalidEntry")
 
-	// Cannot merge an entry into a range I own
+	// Cannot Merge an entry into a range I own
 	ring1.Entries = []*entry{{Token: start, Peer: peer1name}}
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}}
-	wt.AssertTrue(t, ring1.merge(*ring2) == ErrEntryInMyRange, "Expected ErrEntryInMyRange")
+	wt.AssertTrue(t, ring1.Merge(*ring2) == ErrEntryInMyRange, "Expected ErrEntryInMyRange")
 }
 
 func TestMergeMore(t *testing.T) {
@@ -226,8 +226,8 @@ func TestMergeMore(t *testing.T) {
 	assertRing(ring1, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 	assertRing(ring2, []*entry{})
 
-	// Check the merge sends it to the other ring
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	// Check the Merge sends it to the other ring
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 	assertRing(ring1, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 	assertRing(ring2, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 
@@ -236,7 +236,7 @@ func TestMergeMore(t *testing.T) {
 	assertRing(ring1, []*entry{{Token: start, Peer: peer2name, Free: 255, Version: 1}})
 	assertRing(ring2, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 	assertRing(ring1, []*entry{{Token: start, Peer: peer2name, Free: 255, Version: 1}})
 	assertRing(ring2, []*entry{{Token: start, Peer: peer2name, Free: 255, Version: 1}})
 
@@ -246,15 +246,15 @@ func TestMergeMore(t *testing.T) {
 		{Token: middle, Peer: peer1name, Free: 127}})
 	assertRing(ring1, []*entry{{Token: start, Peer: peer2name, Free: 255, Version: 1}})
 
-	// And merge back
-	wt.AssertSuccess(t, ring1.merge(*ring2))
+	// And Merge back
+	wt.AssertSuccess(t, ring1.Merge(*ring2))
 	assertRing(ring1, []*entry{{Token: start, Peer: peer2name, Free: 128, Version: 2},
 		{Token: middle, Peer: peer1name, Free: 127}})
 	assertRing(ring2, []*entry{{Token: start, Peer: peer2name, Free: 128, Version: 2},
 		{Token: middle, Peer: peer1name, Free: 127}})
 
 	// This should be a no-op
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 	assertRing(ring1, []*entry{{Token: start, Peer: peer2name, Free: 128, Version: 2},
 		{Token: middle, Peer: peer1name, Free: 127}})
 	assertRing(ring2, []*entry{{Token: start, Peer: peer2name, Free: 128, Version: 2},
@@ -267,7 +267,7 @@ func TestMergeSplit(t *testing.T) {
 
 	// Claim everything for peer2
 	ring1.Entries = []*entry{{Token: start, Peer: peer2name, Free: 255}}
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// Now grant a split range to peer1
@@ -275,7 +275,7 @@ func TestMergeSplit(t *testing.T) {
 	wt.AssertEquals(t, ring2.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 10}})
-	wt.AssertSuccess(t, ring1.merge(*ring2))
+	wt.AssertSuccess(t, ring1.Merge(*ring2))
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 10}})
@@ -288,7 +288,7 @@ func TestMergeSplit2(t *testing.T) {
 
 	// Claim everything for peer2
 	ring1.Entries = []*entry{{Token: start, Peer: peer2name, Free: 250}, {Token: dot250, Peer: peer2name, Free: 5}}
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// Now grant a split range to peer1
@@ -296,7 +296,7 @@ func TestMergeSplit2(t *testing.T) {
 	wt.AssertEquals(t, ring2.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 5}, {Token: dot250, Peer: peer2name, Free: 5}})
-	wt.AssertSuccess(t, ring1.merge(*ring2))
+	wt.AssertSuccess(t, ring1.Merge(*ring2))
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Free: 10, Version: 1},
 		{Token: dot10, Peer: peer1name, Free: 235},
 		{Token: dot245, Peer: peer2name, Free: 5}, {Token: dot250, Peer: peer2name, Free: 5}})
@@ -320,8 +320,8 @@ func TestGossip(t *testing.T) {
 	assertRing(ring1, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 	assertRing(ring2, []*entry{})
 
-	// Check the merge sends it to the other ring
-	wt.AssertSuccess(t, ring2.UpdateRing(ring1.GossipState()))
+	// Check the Merge sends it to the other ring
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 	assertRing(ring1, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 	assertRing(ring2, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 }
@@ -365,7 +365,7 @@ func TestReportFree(t *testing.T) {
 
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(middle, end, peer2name)
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 
 	freespace := make(map[utils.Address]utils.Offset)
 	for _, r := range ring2.OwnedRanges() {
@@ -389,7 +389,7 @@ func TestEmptyGossip(t *testing.T) {
 
 	ring1.ClaimItAll()
 	// This used to panic, and it shouldn't
-	wt.AssertSuccess(t, ring1.merge(*ring2))
+	wt.AssertSuccess(t, ring1.Merge(*ring2))
 }
 
 func TestMergeOldMessage(t *testing.T) {
@@ -397,10 +397,10 @@ func TestMergeOldMessage(t *testing.T) {
 	ring2 := New(start, end, peer2name)
 
 	ring1.ClaimItAll()
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 
 	ring1.GrantRangeToHost(middle, end, peer1name)
-	wt.AssertSuccess(t, ring1.merge(*ring2))
+	wt.AssertSuccess(t, ring1.Merge(*ring2))
 }
 
 func TestSplitRangeAtBeginning(t *testing.T) {
@@ -408,10 +408,10 @@ func TestSplitRangeAtBeginning(t *testing.T) {
 	ring2 := New(start, end, peer2name)
 
 	ring1.ClaimItAll()
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 
 	ring1.GrantRangeToHost(start, middle, peer2name)
-	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertSuccess(t, ring2.Merge(*ring1))
 }
 
 func TestOwnedRange(t *testing.T) {
@@ -424,7 +424,7 @@ func TestOwnedRange(t *testing.T) {
 	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{Start: start, End: middle}})
 
 	ring2 := New(start, end, peer2name)
-	ring2.merge(*ring1)
+	ring2.Merge(*ring1)
 	wt.AssertEquals(t, ring2.OwnedRanges(), []utils.Range{{Start: middle, End: end}})
 
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}}
@@ -522,7 +522,7 @@ func TestFuzzRing(t *testing.T) {
 
 		// Merge them - this might fail, we don't care
 		// We just want to make sure it doesn't panic
-		ring1.merge(*ring2)
+		ring1.Merge(*ring2)
 
 		// Check whats left still passes assertions
 		ring1.assertInvariants()
@@ -555,7 +555,7 @@ func TestFuzzRing(t *testing.T) {
 
 		// Merge them - this might fail, we don't care
 		// We just want to make sure it doesn't panic
-		ring1.merge(*ring2)
+		ring1.Merge(*ring2)
 
 		// Check whats left still passes assertions
 		ring1.assertInvariants()
@@ -621,7 +621,7 @@ func TestFuzzRingHard(t *testing.T) {
 
 		// We need to be in a ~converged ring to rmpeer
 		for _, ring := range rings {
-			wt.AssertSuccess(t, otherRing.merge(*ring))
+			wt.AssertSuccess(t, otherRing.Merge(*ring))
 		}
 
 		common.Debug.Printf("%s: transferring from peer %s", otherPeername, peername)
@@ -630,7 +630,7 @@ func TestFuzzRingHard(t *testing.T) {
 		// And now tell everyone about the transfer - rmpeer is
 		// not partition safe
 		for i, ring := range rings {
-			wt.AssertSuccess(t, ring.merge(*otherRing))
+			wt.AssertSuccess(t, ring.Merge(*otherRing))
 			theRanges[i] = ring.OwnedRanges()
 		}
 	}
@@ -659,7 +659,7 @@ func TestFuzzRingHard(t *testing.T) {
 			// Now 'gossip' this to a random host (note, note could be same host as above)
 			otherIndex, _, otherRing := randomPeer(-1)
 			common.Debug.Printf("%s: 'Gossiping' to %s", ring.Peername, otherRing.Peername)
-			wt.AssertSuccess(t, otherRing.merge(*ring))
+			wt.AssertSuccess(t, otherRing.Merge(*ring))
 
 			theRanges[indexWithRanges] = ring.OwnedRanges()
 			theRanges[otherIndex] = otherRing.OwnedRanges()
@@ -678,7 +678,7 @@ func TestFuzzRingHard(t *testing.T) {
 		ring1 := ringsWithEntries[rand.Intn(len(ringsWithEntries))]
 		ring2index, _, ring2 := randomPeer(-1)
 		common.Debug.Printf("%s: 'Gossiping' to %s", ring1.Peername, ring2.Peername)
-		wt.AssertSuccess(t, ring2.merge(*ring1))
+		wt.AssertSuccess(t, ring2.Merge(*ring1))
 		theRanges[ring2index] = ring2.OwnedRanges()
 	}
 
