@@ -153,7 +153,7 @@ relatively straightforward:
   acceptor and listener.
 
 - Paxos is usually described in terms of unicast messages from one
-  agent to another, although three of the four messages are multicast
+  agent to another, although three of the four messages are fanned out
   to all agents in a certain role ("prepare" and "accept request" from
   a proposer to all acceptors; "accepted" from an acceptor to all
   learners).  So most implementations involve a communications layer
