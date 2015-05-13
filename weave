@@ -595,22 +595,27 @@ populate_ipam() {
 }
 
 # If we don't already have any CIDRs passed from the command-line, get one from IPAM
+# $1 is the name of the container and $2, if set, is the ID to use inside IPAM
 get_ipam_cidr() {
     if [ -z $CIDR_ARGS ] ; then
-        # get the long form of the container ID
-        if ! status=$(docker inspect --format='{{.State.Running}} {{.Id}}' $1 2>/dev/null); then
-            echo "Error: No such container: $1" >&2
-            return 1
-        fi
-        case "$status" in
-            true*)
-                CONTAINER="${status#true }"
-                ;;
-            *)
-                echo "$1 container is not running." >&2
+        if [ -n $2 ] ; then
+            CONTAINER="$2"
+        else
+            # get the long form of the container ID
+            if ! status=$(docker inspect --format='{{.State.Running}} {{.Id}}' $1 2>/dev/null); then
+                echo "Error: No such container: $1" >&2
                 return 1
-                ;;
-        esac
+            fi
+            case "$status" in
+                true*)
+                    CONTAINER="${status#true }"
+                    ;;
+                *)
+                    echo "$1 container is not running." >&2
+                    return 1
+                    ;;
+            esac
+        fi
         CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT POST /ip/$CONTAINER)"
         if [ "$CIDR_ARGS" = "404 page not found" ] ; then
             echo "No IP address supplied (use the -iprange option on 'weave launch'\nto enable IP allocation)" >&2
@@ -831,7 +836,7 @@ case "$COMMAND" in
         CONTAINER_ID="$1"
         create_bridge
         CONTAINER=$(docker start $CONTAINER_ID)
-        get_ipam_cidr $CONTAINER
+        get_ipam_cidr $CONTAINER_ID $CONTAINER
         with_container_netns $CONTAINER_ID attach $CIDR_ARGS >/dev/null
         tell_dns PUT $CONTAINER_ID $CIDR_ARGS
         echo $CONTAINER
@@ -857,7 +862,7 @@ case "$COMMAND" in
     expose)
         collect_cidr_args "$@"
         shift $CIDR_COUNT
-        [ $CIDR_COUNT -gt 0 ] || { get_ipam_cidr weave && expose $CIDR_ARGS ; }
+        [ $CIDR_COUNT -gt 0 ] || { get_ipam_cidr weave weave:expose && expose $CIDR_ARGS ; }
         if [ $# -eq 0 ]; then
             FQDN=""
         else
