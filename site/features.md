@@ -93,10 +93,12 @@ network which address ranges it was previously using. If, however, you
 run `weave reset` this will remove the peer from the network so
 if Weave is run again on that node it will start from scratch.
 
-For failed peers, the `weave rmpeer` command can be used to permanently
-remove the ranges allocated to said peer.  This will allow other peers
-to allocate IPs in the ranges previously owner by the rm'd peer, and as such
-should be used with extreme caution - if the rm'd peer later rejoins
+For failed peers, the `weave rmpeer` command can be used to
+permanently remove the ranges allocated to said peer.  This will allow
+other peers to allocate IPs in the ranges previously owner by the rm'd
+peer, and as such should be used with extreme caution - if the rm'd
+peer had transferred some range of IP addresses to another peer but
+this is not known to the whole network, or if it later rejoins
 the Weave network, the same IP address may be allocated twice.
 
 ### <a name="application-isolation"></a>Application isolation
