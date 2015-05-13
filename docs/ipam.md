@@ -54,7 +54,7 @@ space (all owned ranges are full), it will ask another peer for space:
     - if the target peer decides to give up space, it unicasts a message
       back to the asker with the newly-updated ring.
     - if the target peer has no space, it unicasts a message back to the
-      asker with its current copy of the ring,on the basis tha the
+      asker with its current copy of the ring, on the basis that the
       requestor must have acted on out-of-date information.
   - it will continue to ask for space until it receives some, or its
     copy of the ring tells it all peers are full.
