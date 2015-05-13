@@ -129,17 +129,14 @@ func main() {
 
 	router := weave.NewRouter(config, name, nickName)
 	log.Println("Our name is", router.Ourself.FullName())
+	var allocator *ipam.Allocator
 	if httpAddr != "" {
 		if iprangeCIDR != "" {
-			allocator := createAllocator(router, apiPath, iprangeCIDR, determineQuorum(quorum, peers))
-
-			go handleHTTP(router, httpAddr, allocator)
+			allocator = createAllocator(router, apiPath, iprangeCIDR, determineQuorum(quorum, peers))
 		} else {
 			if quorum > 0 {
 				log.Fatal("-quorum flag specified without -iprange")
 			}
-
-			go handleHTTP(router, httpAddr)
 		}
 	}
 	if httpAddr == "" || iprangeCIDR == "" {
@@ -147,6 +144,12 @@ func main() {
 	}
 	router.Start()
 	initiateConnections(router, peers)
+	if allocator != nil {
+		go handleHTTP(router, httpAddr, allocator)
+		allocator.HandleHTTP(http.DefaultServeMux)
+	} else {
+		go handleHTTP(router, httpAddr)
+	}
 	handleSignals(router)
 }
 
@@ -191,7 +194,6 @@ func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string, q
 	}
 	allocator.SetInterfaces(router.NewGossip("IPallocation", allocator))
 	allocator.Start()
-	allocator.HandleHTTP(http.DefaultServeMux)
 	err = updater.Start(apiPath, allocator)
 	if err != nil {
 		log.Fatal("Unable to start watcher", err)
