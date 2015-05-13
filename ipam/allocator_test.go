@@ -58,7 +58,7 @@ func TestAllocFree(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		donateSize     = 5
 		donateStart    = "10.0.1.7"
@@ -140,14 +140,20 @@ func TestAllocatorClaim(t *testing.T) {
 	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
 }
 
-func (alloc *Allocator) sleepForTesting(d time.Duration) {
+func (alloc *Allocator) pause() func() {
+	paused := make(chan struct{})
 	alloc.actionChan <- func() {
-		time.Sleep(d)
+		paused <- struct{}{}
+		<-paused
+	}
+	<-paused
+	return func() {
+		close(paused)
 	}
 }
 
 func TestCancel(t *testing.T) {
-	//common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		CIDR = "10.0.1.7/26"
 	)
@@ -179,14 +185,12 @@ func TestCancel(t *testing.T) {
 
 	// Now we're going to pause alloc2 and ask alloc1
 	// for an allocation
-	alloc2.sleepForTesting(500 * time.Millisecond)
-	time.Sleep(100 * time.Millisecond)
+	unpause := alloc2.pause()
 
 	// Use up all the IPs that alloc1 owns, so the allocation after this will prompt a request to alloc2
 	for i := 0; alloc1.space.NumFreeAddresses() > 0; i++ {
 		alloc1.Allocate(fmt.Sprintf("tmp%d", i), nil)
 	}
-
 	cancelChan := make(chan bool, 1)
 	doneChan := make(chan bool)
 	go func() {
@@ -197,12 +201,12 @@ func TestCancel(t *testing.T) {
 	AssertNothingSent(t, doneChan)
 	time.Sleep(100 * time.Millisecond)
 	AssertNothingSent(t, doneChan)
+
 	cancelChan <- true
-	flag := <-doneChan
-	if flag {
+	unpause()
+	if <-doneChan {
 		wt.Fatalf(t, "Error: got result from Allocate")
 	}
-	alloc2.String() // see if it's still operating.
 }
 
 func TestGossipShutdown(t *testing.T) {
@@ -260,7 +264,7 @@ func TestTransfer(t *testing.T) {
 }
 
 func TestFakeRouterSimple(t *testing.T) {
-	common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		cidr = "10.0.1.7/22"
 	)
@@ -276,7 +280,7 @@ func TestFakeRouterSimple(t *testing.T) {
 }
 
 func TestAllocatorFuzz(t *testing.T) {
-	//common.InitDefaultLogging(true)
+	common.InitDefaultLogging(false)
 	const (
 		firstpass    = 1000
 		secondpass   = 5000
