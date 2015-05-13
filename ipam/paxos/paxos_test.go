@@ -96,8 +96,8 @@ func makeRandomModel(params *TestParams, r *rand.Rand, t *testing.T) *Model {
 	}
 
 	for i := range m.nodes {
-		m.nodes[i].Init(router.PeerName(i+1), router.PeerUID(r.Int63()),
-			m.quorum)
+		m.nodes[i].Init(router.PeerName(i/2+1),
+			router.PeerUID(r.Int63()), m.quorum)
 		m.nodes[i].Propose()
 	}
 
@@ -285,9 +285,9 @@ func (m *Model) simulate(params *TestParams) bool {
 func (m *Model) dump() {
 	for i := range m.nodes {
 		node := &m.nodes[i]
-		fmt.Printf("node: %v (firstConsensus = %v)\n", node.id, node.firstConsensus)
+		fmt.Println(node.id)
 		for n, claims := range node.knows {
-			fmt.Printf("\tnode %v: claims %v\n", n, claims)
+			fmt.Printf("\t%d %v\n", n, claims)
 		}
 	}
 }
