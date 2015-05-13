@@ -285,9 +285,9 @@ func (m *Model) simulate(params *TestParams) bool {
 func (m *Model) dump() {
 	for i := range m.nodes {
 		node := &m.nodes[i]
-		fmt.Println(node.id)
+		fmt.Printf("node: %v (firstConsensus = %v)\n", node.id, node.firstConsensus)
 		for n, claims := range node.knows {
-			fmt.Printf("\t%d %v\n", n, claims)
+			fmt.Printf("\tnode %v: claims %v\n", n, claims)
 		}
 	}
 }
