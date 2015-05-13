@@ -67,7 +67,7 @@ an address automatically if none is specified, i.e.:
 
     host1# D=$(weave run -t -i ubuntu)
 
-Weave uses the Docker Events API to learn when a container has exited
+Weave will automatically learn when a container has exited
 and hence can release its IP address.
 
 Weave shares the IP range across all peers, dynamically according to
