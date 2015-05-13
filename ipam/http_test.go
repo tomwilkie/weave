@@ -128,6 +128,7 @@ func impTestHTTPCancel(t *testing.T) {
 	)
 
 	alloc := makeAllocatorWithMockGossip(t, "08:00:27:01:c3:9a", testCIDR1, 1)
+	defer alloc.Stop()
 	alloc.claimRingForTesting()
 	port := rand.Intn(10000) + 32768
 	fmt.Println("Http test on port", port)
@@ -136,7 +137,7 @@ func impTestHTTPCancel(t *testing.T) {
 	time.Sleep(100 * time.Millisecond) // Allow for http server to get going
 
 	// Stop the alloc so nothing actually works
-	alloc.Stop()
+	unpause := alloc.pause()
 
 	// Ask the http server for a new address
 	done := make(chan *http.Response)
@@ -146,9 +147,10 @@ func impTestHTTPCancel(t *testing.T) {
 		done <- res
 	}()
 
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	fmt.Println("Cancelling allocate")
 	http.DefaultTransport.(*http.Transport).CancelRequest(req)
+	unpause()
 	res := <-done
 	if res != nil {
 		wt.Fatalf(t, "Error: Allocate returned non-nil")
