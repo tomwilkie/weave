@@ -151,13 +151,6 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 	})
 	preceedingPos--
 
-	// At the end, the check is a little trickier.  There is never an entry with
-	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
-	// we actually want an entry with a token of r.Start
-	if end == r.End {
-		end = r.Start
-	}
-
 	// Check all tokens up to end are owned by us
 	for pos := preceedingPos; pos < len(r.Entries) && r.Entries.entry(pos).Token < end; pos++ {
 		utils.Assert(r.Entries.entry(pos).Peer == r.Peername)
@@ -188,7 +181,11 @@ func (r *Ring) GrantRangeToHost(start, end utils.Address, peer router.PeerName) 
 		entry.update(peer, entry.Free)
 	}
 
-	r.assertInvariants()
+	// There is never an entry with a token of r.End, as the end of
+	// the ring is exclusive.
+	if end == r.End {
+		end = r.Start
+	}
 
 	//  If there is a token equal to the end of the range, we don't need to do anything further
 	if _, found := r.Entries.get(end); found {
