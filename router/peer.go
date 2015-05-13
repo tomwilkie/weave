@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-type PeerUID uint16
+type PeerUID uint64
 
 func ParsePeerUID(s string) (PeerUID, error) {
 	uid, err := strconv.ParseUint(s, 10, 64)
