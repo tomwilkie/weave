@@ -144,12 +144,7 @@ func main() {
 	}
 	router.Start()
 	initiateConnections(router, peers)
-	if allocator != nil {
-		go handleHTTP(router, httpAddr, allocator)
-		allocator.HandleHTTP(http.DefaultServeMux)
-	} else {
-		go handleHTTP(router, httpAddr)
-	}
+	go handleHTTP(router, httpAddr, allocator)
 	handleSignals(router)
 }
 
@@ -224,7 +219,7 @@ func determineQuorum(initPeerCountFlag int, peers []string) uint {
 	return quorum
 }
 
-func handleHTTP(router *weave.Router, httpAddr string, others ...interface{}) {
+func handleHTTP(router *weave.Router, httpAddr string, allocator *ipam.Allocator) {
 	encryption := "off"
 	if router.UsingPassword() {
 		encryption = "on"
@@ -232,12 +227,16 @@ func handleHTTP(router *weave.Router, httpAddr string, others ...interface{}) {
 
 	muxRouter := mux.NewRouter()
 
+	if allocator != nil {
+		allocator.HandleHTTP(muxRouter)
+	}
+
 	muxRouter.Methods("GET").Path("/status").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "weave router", version)
 		fmt.Fprintln(w, "Encryption", encryption)
 		fmt.Fprintln(w, router.Status())
-		for _, x := range others {
-			fmt.Fprintln(w, x)
+		if allocator != nil {
+			fmt.Fprintln(w, allocator.String())
 		}
 	})
 
