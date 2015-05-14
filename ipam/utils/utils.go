@@ -1,4 +1,4 @@
-package utils
+package ip
 
 import (
 	"net"
@@ -10,13 +10,6 @@ type Offset uint32
 
 type Range struct {
 	Start, End Address // [Start, End); Start <= End
-}
-
-// We shouldn't ever get any errors on *encoding*, but if we do, this will make sure we get to hear about them.
-func panicOnError(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
 
 func ParseIP(s string) Address {
