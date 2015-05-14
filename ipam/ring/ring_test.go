@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/weaveworks/weave/common"
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/ipam/address"
 	"github.com/weaveworks/weave/router"
 	wt "github.com/weaveworks/weave/testing"
 )
@@ -18,10 +18,10 @@ var (
 	peer2name, _ = router.PeerNameFromString("02:00:00:00:02:00")
 	peer3name, _ = router.PeerNameFromString("03:00:00:00:02:00")
 
-	start, end    = utils.ParseIP("10.0.0.0"), utils.ParseIP("10.0.0.255")
-	dot10, dot245 = utils.ParseIP("10.0.0.10"), utils.ParseIP("10.0.0.245")
-	dot250        = utils.ParseIP("10.0.0.250")
-	middle        = utils.ParseIP("10.0.0.128")
+	start, end    = address.ParseIP("10.0.0.0"), address.ParseIP("10.0.0.255")
+	dot10, dot245 = address.ParseIP("10.0.0.10"), address.ParseIP("10.0.0.245")
+	dot250        = address.ParseIP("10.0.0.250")
+	middle        = address.ParseIP("10.0.0.128")
 )
 
 func TestInvariants(t *testing.T) {
@@ -70,7 +70,7 @@ func TestBetween(t *testing.T) {
 	// First off, in a ring where everything is owned by the peer
 	// between should return true for everything
 	for i := 1; i <= 255; i++ {
-		ip := utils.ParseIP(fmt.Sprintf("10.0.0.%d", i))
+		ip := address.ParseIP(fmt.Sprintf("10.0.0.%d", i))
 		wt.AssertTrue(t, ring1.Entries.between(ip, 0, 1), "between should be true!")
 	}
 
@@ -81,7 +81,7 @@ func TestBetween(t *testing.T) {
 	ring1.assertInvariants()
 	for i := 10; i <= 244; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.ParseIP(ipStr)
+		ip := address.ParseIP(ipStr)
 		wt.AssertTrue(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 		wt.AssertFalse(t, ring1.Entries.between(ip, 1, 2),
@@ -89,7 +89,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 0; i <= 9; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.ParseIP(ipStr)
+		ip := address.ParseIP(ipStr)
 		wt.AssertFalse(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.Entries.between(ip, 1, 2),
@@ -97,7 +97,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 245; i <= 255; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.ParseIP(ipStr)
+		ip := address.ParseIP(ipStr)
 		wt.AssertFalse(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.Entries.between(ip, 1, 2),
@@ -337,7 +337,7 @@ func TestFindFree(t *testing.T) {
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
 	// We shouldn't return outselves
-	ring1.ReportFree(map[utils.Address]utils.Offset{start: 10})
+	ring1.ReportFree(map[address.Address]address.Offset{start: 10})
 	_, err = ring1.ChoosePeerToAskForSpace()
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
@@ -367,7 +367,7 @@ func TestReportFree(t *testing.T) {
 	ring1.GrantRangeToHost(middle, end, peer2name)
 	wt.AssertSuccess(t, ring2.Merge(*ring1))
 
-	freespace := make(map[utils.Address]utils.Offset)
+	freespace := make(map[address.Address]address.Offset)
 	for _, r := range ring2.OwnedRanges() {
 		freespace[r.Start] = 0
 	}
@@ -418,22 +418,22 @@ func TestOwnedRange(t *testing.T) {
 	ring1 := New(start, end, peer1name)
 	ring1.ClaimItAll()
 
-	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{Start: start, End: end}})
+	wt.AssertEquals(t, ring1.OwnedRanges(), []address.Range{{Start: start, End: end}})
 
 	ring1.GrantRangeToHost(middle, end, peer2name)
-	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{Start: start, End: middle}})
+	wt.AssertEquals(t, ring1.OwnedRanges(), []address.Range{{Start: start, End: middle}})
 
 	ring2 := New(start, end, peer2name)
 	ring2.Merge(*ring1)
-	wt.AssertEquals(t, ring2.OwnedRanges(), []utils.Range{{Start: middle, End: end}})
+	wt.AssertEquals(t, ring2.OwnedRanges(), []address.Range{{Start: middle, End: end}})
 
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}}
 	wt.AssertEquals(t, ring2.OwnedRanges(),
-		[]utils.Range{{Start: start, End: middle}, {Start: middle, End: end}})
+		[]address.Range{{Start: start, End: middle}, {Start: middle, End: end}})
 
 	ring2.Entries = []*entry{{Token: dot10, Peer: peer2name}, {Token: middle, Peer: peer2name}}
 	wt.AssertEquals(t, ring2.OwnedRanges(),
-		[]utils.Range{{Start: start, End: dot10}, {Start: dot10, End: middle},
+		[]address.Range{{Start: start, End: dot10}, {Start: dot10, End: middle},
 			{Start: middle, End: end}})
 }
 
@@ -443,7 +443,7 @@ func TestTransfer(t *testing.T) {
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(middle, end, peer2name)
 	ring1.Transfer(peer2name, peer1name)
-	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{start, middle}, {middle, end}})
+	wt.AssertEquals(t, ring1.OwnedRanges(), []address.Range{{start, middle}, {middle, end}})
 
 	// Second test is what happens when a token exists at the end of a range but is transferred
 	// - does it get resurrected correctly?
@@ -452,7 +452,7 @@ func TestTransfer(t *testing.T) {
 	ring1.GrantRangeToHost(middle, end, peer2name)
 	ring1.Transfer(peer2name, peer1name)
 	ring1.GrantRangeToHost(dot10, middle, peer2name)
-	wt.AssertEquals(t, ring1.OwnedRanges(), []utils.Range{{start, dot10}, {middle, end}})
+	wt.AssertEquals(t, ring1.OwnedRanges(), []address.Range{{start, dot10}, {middle, end}})
 }
 
 func TestOwner(t *testing.T) {
@@ -471,7 +471,7 @@ func TestOwner(t *testing.T) {
 	})
 }
 
-type addressSlice []utils.Address
+type addressSlice []address.Address
 
 func (s addressSlice) Len() int           { return len(s) }
 func (s addressSlice) Less(i, j int) bool { return s[i] < s[j] }
@@ -494,11 +494,11 @@ func TestFuzzRing(t *testing.T) {
 		addressSpace := end - start
 		numTokens := rand.Intn(int(addressSpace))
 
-		tokenMap := make(map[utils.Address]bool)
+		tokenMap := make(map[address.Address]bool)
 		for i := 0; i < numTokens; i++ {
-			tokenMap[utils.Address(rand.Intn(int(addressSpace)))] = true
+			tokenMap[address.Address(rand.Intn(int(addressSpace)))] = true
 		}
-		var tokens []utils.Address
+		var tokens []address.Address
 		for token := range tokenMap {
 			tokens = append(tokens, token)
 		}
@@ -533,9 +533,9 @@ func TestFuzzRing(t *testing.T) {
 	makeBadRandomRing := func() *Ring {
 		addressSpace := end - start
 		numTokens := rand.Intn(int(addressSpace))
-		tokens := make([]utils.Address, numTokens)
+		tokens := make([]address.Address, numTokens)
 		for i := 0; i < numTokens; i++ {
-			tokens[i] = utils.Address(rand.Intn(int(addressSpace)))
+			tokens[i] = address.Address(rand.Intn(int(addressSpace)))
 		}
 
 		peer := peers[rand.Intn(len(peers))]
@@ -601,7 +601,7 @@ func TestFuzzRingHard(t *testing.T) {
 
 	// Keep a map of index -> ranges, as these are a little expensive to
 	// calculate for every ring on every iteration.
-	var theRanges = make(map[int][]utils.Range)
+	var theRanges = make(map[int][]address.Range)
 	theRanges[0] = rings[0].OwnedRanges()
 
 	addOrRmPeer := func() {
@@ -614,7 +614,7 @@ func TestFuzzRingHard(t *testing.T) {
 		// Remove peer from our state
 		peers = append(peers[:peerIndex], peers[peerIndex+1:]...)
 		rings = append(rings[:peerIndex], rings[peerIndex+1:]...)
-		theRanges = make(map[int][]utils.Range)
+		theRanges = make(map[int][]address.Range)
 
 		// Transfer the space for this peer on another peer, but not this one
 		_, otherPeername, otherRing := randomPeer(peerIndex)
@@ -650,8 +650,8 @@ func TestFuzzRingHard(t *testing.T) {
 			ring := rings[indexWithRanges]
 
 			rangeToSplit := ownedRanges[rand.Intn(len(ownedRanges))]
-			size := utils.Subtract(rangeToSplit.End, rangeToSplit.Start)
-			ipInRange := utils.Add(rangeToSplit.Start, utils.Offset(rand.Intn(int(size))))
+			size := address.Subtract(rangeToSplit.End, rangeToSplit.Start)
+			ipInRange := address.Add(rangeToSplit.Start, address.Offset(rand.Intn(int(size))))
 			_, peerToGiveTo, _ := randomPeer(-1)
 			common.Debug.Printf("%s: Granting [%v, %v) to %s", ring.Peername, ipInRange, rangeToSplit.End, peerToGiveTo)
 			ring.GrantRangeToHost(ipInRange, rangeToSplit.End, peerToGiveTo)

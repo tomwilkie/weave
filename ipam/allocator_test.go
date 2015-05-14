@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/weaveworks/weave/common"
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/ipam/address"
 	"github.com/weaveworks/weave/router"
 	wt "github.com/weaveworks/weave/testing"
 )
@@ -54,7 +54,7 @@ func TestAllocFree(t *testing.T) {
 	alloc.ContainerDied(container2)
 	alloc.ContainerDied(container3)
 	alloc.String() // force sync-up after async call
-	wt.AssertEquals(t, alloc.space.NumFreeAddresses(), utils.Offset(spaceSize))
+	wt.AssertEquals(t, alloc.space.NumFreeAddresses(), address.Offset(spaceSize))
 }
 
 func TestBootstrap(t *testing.T) {
@@ -256,7 +256,7 @@ func TestTransfer(t *testing.T) {
 	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc2.ourName.String()))
 	wt.AssertSuccess(t, alloc1.AdminTakeoverRanges(alloc3.ourName.String()))
 
-	wt.AssertEquals(t, alloc1.space.NumFreeAddresses(), utils.Offset(1022))
+	wt.AssertEquals(t, alloc1.space.NumFreeAddresses(), address.Offset(1022))
 
 	_, err = alloc1.Allocate("foo", nil)
 	wt.AssertTrue(t, err == nil, "Failed to get address")
@@ -388,7 +388,7 @@ func TestAllocatorFuzz(t *testing.T) {
 		//common.Info.Printf("Asking for %s on allocator %d again", addr, res.alloc)
 
 		newAddr, _ := alloc.Allocate(res.name, nil)
-		if newAddr != utils.ParseIP(addr) {
+		if newAddr != address.ParseIP(addr) {
 			panic(fmt.Sprintf("Got different address for repeat request"))
 		}
 	}

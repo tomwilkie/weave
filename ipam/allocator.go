@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/weaveworks/weave/common"
+	"github.com/weaveworks/weave/ipam/address"
 	"github.com/weaveworks/weave/ipam/paxos"
 	"github.com/weaveworks/weave/ipam/ring"
 	"github.com/weaveworks/weave/ipam/space"
-	"github.com/weaveworks/weave/ipam/utils"
 	"github.com/weaveworks/weave/router"
 )
 
@@ -46,12 +46,12 @@ type operation interface {
 type Allocator struct {
 	actionChan         chan<- func()
 	ourName            router.PeerName
-	subnetStart        utils.Address              // start address of space all peers are allocating from
-	subnetSize         utils.Offset               // length of space all peers are allocating from
+	subnetStart        address.Address            // start address of space all peers are allocating from
+	subnetSize         address.Offset             // length of space all peers are allocating from
 	prefixLen          int                        // network prefix length, e.g. 24 for a /24 network
 	ring               *ring.Ring                 // information on ranges owned by all peers
 	space              space.Space                // more detail on ranges owned by us
-	owned              map[string]utils.Address   // who owns what address, indexed by container-ID
+	owned              map[string]address.Address // who owns what address, indexed by container-ID
 	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for rmpeer
 	pendingAllocates   []operation                // held until we get some free space
 	pendingClaims      []operation                // held until we know who owns the space
@@ -73,19 +73,19 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, subnetCIDR str
 	}
 	// Get the size of the network from the mask
 	ones, bits := subnet.Mask.Size()
-	var subnetSize utils.Offset = 1 << uint(bits-ones)
+	var subnetSize address.Offset = 1 << uint(bits-ones)
 	if subnetSize < 4 {
 		return nil, errors.New("Allocation subnet too small")
 	}
-	subnetStart := utils.IP4Address(subnet.IP)
+	subnetStart := address.IP4Address(subnet.IP)
 	alloc := &Allocator{
 		ourName:     ourName,
 		subnetStart: subnetStart,
 		subnetSize:  subnetSize,
 		prefixLen:   ones,
 		// per RFC 1122, don't allocate the first and last address in the subnet
-		ring:               ring.New(utils.Add(subnetStart, 1), utils.Add(subnetStart, subnetSize-1), ourName),
-		owned:              make(map[string]utils.Address),
+		ring:               ring.New(address.Add(subnetStart, 1), address.Add(subnetStart, subnetSize-1), ourName),
+		owned:              make(map[string]address.Address),
 		otherPeerNicknames: make(map[router.PeerName]string),
 		now:                time.Now,
 	}
@@ -206,7 +206,7 @@ func hasBeenCancelled(cancelChan <-chan bool) func() bool {
 
 // Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
-func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) (utils.Address, error) {
+func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) (address.Address, error) {
 	resultChan := make(chan allocateResult)
 	op := &allocate{resultChan: resultChan, ident: ident,
 		hasBeenCancelled: hasBeenCancelled(cancelChan)}
@@ -216,7 +216,7 @@ func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) (utils.Ad
 }
 
 // Claim an address that we think we should own (Sync)
-func (alloc *Allocator) Claim(ident string, addr utils.Address, cancelChan <-chan bool) error {
+func (alloc *Allocator) Claim(ident string, addr address.Address, cancelChan <-chan bool) error {
 	resultChan := make(chan error)
 	op := &claim{resultChan: resultChan, ident: ident, addr: addr,
 		hasBeenCancelled: hasBeenCancelled(cancelChan)}
@@ -607,11 +607,11 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	start, size, ok := alloc.space.Donate()
 	if !ok {
 		free := alloc.space.NumFreeAddresses()
-		utils.Assert(free == 0)
+		common.Assert(free == 0)
 		alloc.debugln("No space to give to peer", to)
 		return
 	}
-	end := utils.Add(start, size)
+	end := address.Add(start, size)
 	alloc.debugln("Giving range", start, end, size, "to", to)
 	alloc.ring.GrantRangeToHost(start, end, to)
 }
@@ -624,12 +624,12 @@ func (alloc *Allocator) assertInvariants() {
 	ranges := checkSpace.OwnedRanges()
 	spaces := alloc.space.OwnedRanges()
 
-	utils.Assert(len(ranges) == len(spaces))
+	common.Assert(len(ranges) == len(spaces))
 
 	for i := 0; i < len(ranges); i++ {
 		r := ranges[i]
 		s := spaces[i]
-		utils.Assert(s.Start == r.Start && s.End == r.End)
+		common.Assert(s.Start == r.Start && s.End == r.End)
 	}
 }
 
@@ -639,7 +639,7 @@ func (alloc *Allocator) reportFreeSpace() {
 		return
 	}
 
-	freespace := make(map[utils.Address]utils.Offset)
+	freespace := make(map[address.Address]address.Offset)
 	for _, r := range ranges {
 		freespace[r.Start] = alloc.space.NumFreeAddressesInRange(r.Start, r.End)
 	}
@@ -648,11 +648,11 @@ func (alloc *Allocator) reportFreeSpace() {
 
 // Owned addresses
 
-func (alloc *Allocator) addOwned(ident string, addr utils.Address) {
+func (alloc *Allocator) addOwned(ident string, addr address.Address) {
 	alloc.owned[ident] = addr
 }
 
-func (alloc *Allocator) findOwner(addr utils.Address) string {
+func (alloc *Allocator) findOwner(addr address.Address) string {
 	for ident, candidate := range alloc.owned {
 		if candidate == addr {
 			return ident

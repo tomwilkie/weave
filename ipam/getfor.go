@@ -2,11 +2,11 @@ package ipam
 
 import (
 	"fmt"
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/ipam/address"
 )
 
 type allocateResult struct {
-	addr utils.Address
+	addr address.Address
 	err  error
 }
 

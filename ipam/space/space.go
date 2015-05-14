@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/common"
+	"github.com/weaveworks/weave/ipam/address"
 )
 
-type Addr utils.Address
+type Addr address.Address
 
 type Space struct {
 	// ours and free represent a set of addresses as a sorted
@@ -18,22 +19,16 @@ type Space struct {
 	// overlap, and neighbouring ranges are always coalesced if
 	// possible, so the arrays consist of sorted Addrs without
 	// repetition.
-	ours []utils.Address
-	free []utils.Address
+	ours []address.Address
+	free []address.Address
 }
 
 func New() *Space {
 	return &Space{}
 }
 
-func assert(cond bool) {
-	if !cond {
-		panic("assertion failed")
-	}
-}
-
-func (s *Space) Add(start utils.Address, size utils.Offset) {
-	s.free = add(s.free, start, utils.Add(start, size))
+func (s *Space) Add(start address.Address, size address.Offset) {
+	s.free = add(s.free, start, address.Add(start, size))
 }
 
 // Clear removes all spaces from this space set.  Used during node shutdown.
@@ -42,7 +37,7 @@ func (s *Space) Clear() {
 	s.ours = s.ours[:0]
 }
 
-func (s *Space) Allocate() (bool, utils.Address) {
+func (s *Space) Allocate() (bool, address.Address) {
 	if len(s.free) == 0 {
 		return false, 0
 	} else {
@@ -53,7 +48,7 @@ func (s *Space) Allocate() (bool, utils.Address) {
 	}
 }
 
-func (s *Space) Claim(addr utils.Address) error {
+func (s *Space) Claim(addr address.Address) error {
 	if !contains(s.free, addr) {
 		return fmt.Errorf("Address %v is not free to claim", addr)
 	}
@@ -63,16 +58,16 @@ func (s *Space) Claim(addr utils.Address) error {
 	return nil
 }
 
-func (s *Space) NumFreeAddresses() utils.Offset {
-	res := utils.Offset(0)
+func (s *Space) NumFreeAddresses() address.Offset {
+	res := address.Offset(0)
 	for i := 0; i < len(s.free); i += 2 {
-		res += utils.Subtract(s.free[i+1], s.free[i])
+		res += address.Subtract(s.free[i+1], s.free[i])
 	}
 	return res
 }
 
-func (s *Space) NumFreeAddressesInRange(start, end utils.Address) utils.Offset {
-	res := utils.Offset(0)
+func (s *Space) NumFreeAddressesInRange(start, end address.Address) address.Offset {
+	res := address.Offset(0)
 	for i := 0; i < len(s.free); i += 2 {
 		s, e := s.free[i], s.free[i+1]
 		if s < start {
@@ -84,12 +79,12 @@ func (s *Space) NumFreeAddressesInRange(start, end utils.Address) utils.Offset {
 		if s >= e {
 			continue
 		}
-		res += utils.Subtract(e, s)
+		res += address.Subtract(e, s)
 	}
 	return res
 }
 
-func (s *Space) Free(addr utils.Address) error {
+func (s *Space) Free(addr address.Address) error {
 	if !contains(s.ours, addr) {
 		return fmt.Errorf("Address %v is not ours", addr)
 	}
@@ -102,12 +97,12 @@ func (s *Space) Free(addr utils.Address) error {
 	return nil
 }
 
-func (s *Space) biggestFreeRange() (int, utils.Offset) {
+func (s *Space) biggestFreeRange() (int, address.Offset) {
 	pos := -1
-	biggest := utils.Offset(0)
+	biggest := address.Offset(0)
 
 	for i := 0; i < len(s.free); i += 2 {
-		size := utils.Subtract(s.free[i+1], s.free[i])
+		size := address.Subtract(s.free[i+1], s.free[i])
 		if size >= biggest {
 			pos = i
 			biggest = size
@@ -116,7 +111,7 @@ func (s *Space) biggestFreeRange() (int, utils.Offset) {
 	return pos, biggest
 }
 
-func (s *Space) Donate() (utils.Address, utils.Offset, bool) {
+func (s *Space) Donate() (address.Address, address.Offset, bool) {
 	if len(s.free) == 0 {
 		return 0, 0, false
 	}
@@ -126,42 +121,42 @@ func (s *Space) Donate() (utils.Address, utils.Offset, bool) {
 	// Donate half of that biggest free range, rounding up so
 	// that the donation can't be empty
 	end := s.free[pos+1]
-	start := end - utils.Address((biggest+1)/2)
+	start := end - address.Address((biggest+1)/2)
 
 	s.ours = subtract(s.ours, start, end)
 	s.free = subtract(s.free, start, end)
-	return start, utils.Subtract(end, start), true
+	return start, address.Subtract(end, start), true
 }
 
-func firstGreater(a []utils.Address, x utils.Address) int {
+func firstGreater(a []address.Address, x address.Address) int {
 	return sort.Search(len(a), func(i int) bool { return a[i] > x })
 }
 
-func firstGreaterOrEq(a []utils.Address, x utils.Address) int {
+func firstGreaterOrEq(a []address.Address, x address.Address) int {
 	return sort.Search(len(a), func(i int) bool { return a[i] >= x })
 }
 
 // Do the ranges contain the given address?
-func contains(addrs []utils.Address, addr utils.Address) bool {
+func contains(addrs []address.Address, addr address.Address) bool {
 	return firstGreater(addrs, addr)&1 != 0
 }
 
 // Take the union of the range [start, end) with the ranges in the array
-func add(addrs []utils.Address, start utils.Address, end utils.Address) []utils.Address {
+func add(addrs []address.Address, start address.Address, end address.Address) []address.Address {
 	return addSub(addrs, start, end, 0)
 }
 
 // Subtract the range [start, end) from the ranges in the array
-func subtract(addrs []utils.Address, start utils.Address, end utils.Address) []utils.Address {
+func subtract(addrs []address.Address, start address.Address, end address.Address) []address.Address {
 	return addSub(addrs, start, end, 1)
 }
 
-func addSub(addrs []utils.Address, start utils.Address, end utils.Address, sense int) []utils.Address {
+func addSub(addrs []address.Address, start address.Address, end address.Address, sense int) []address.Address {
 	start_pos := firstGreaterOrEq(addrs, start)
 	end_pos := firstGreater(addrs[start_pos:], end) + start_pos
 
 	// Boundaries up to start_pos are unaffected
-	res := make([]utils.Address, start_pos, len(addrs)+2)
+	res := make([]address.Address, start_pos, len(addrs)+2)
 	copy(res, addrs)
 
 	// Include start and end as new boundaries if they lie
@@ -198,20 +193,20 @@ func (s *Space) String() string {
 	return buf.String()
 }
 
-type addressSlice []utils.Address
+type addressSlice []address.Address
 
 func (p addressSlice) Len() int           { return len(p) }
 func (p addressSlice) Less(i, j int) bool { return p[i] < p[j] }
 func (p addressSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 func (s *Space) assertInvariants() {
-	utils.Assert(sort.IsSorted(addressSlice(s.ours)))
-	utils.Assert(sort.IsSorted(addressSlice(s.free)))
+	common.Assert(sort.IsSorted(addressSlice(s.ours)))
+	common.Assert(sort.IsSorted(addressSlice(s.free)))
 }
 
 // Return a slice representing everything we own, whether it is free or not
-func (s *Space) everything() []utils.Address {
-	a := make([]utils.Address, len(s.ours))
+func (s *Space) everything() []address.Address {
+	a := make([]address.Address, len(s.ours))
 	copy(a, s.ours)
 	for i := 0; i < len(s.free); i += 2 {
 		a = add(a, s.free[i], s.free[i+1])
@@ -221,25 +216,25 @@ func (s *Space) everything() []utils.Address {
 
 // OwnedRanges returns slice of Ranges, ordered by IP, gluing together
 // contiguous sequences of owned and free addresses
-func (s *Space) OwnedRanges() []utils.Range {
+func (s *Space) OwnedRanges() []address.Range {
 	everything := s.everything()
-	result := make([]utils.Range, len(everything)/2)
+	result := make([]address.Range, len(everything)/2)
 	for i := 0; i < len(everything); i += 2 {
-		result[i/2] = utils.Range{Start: everything[i], End: everything[i+1]}
+		result[i/2] = address.Range{Start: everything[i], End: everything[i+1]}
 	}
 	return result
 }
 
 // Create a Space that has free space in all the supplied Ranges.
-func (s *Space) AddRanges(ranges []utils.Range) {
+func (s *Space) AddRanges(ranges []address.Range) {
 	for _, r := range ranges {
 		s.free = add(s.free, r.Start, r.End)
 	}
 }
 
 // Taking ranges to be a set of all space we should own, add in any excess as free space
-func (s *Space) UpdateRanges(ranges []utils.Range) {
-	new := []utils.Address{}
+func (s *Space) UpdateRanges(ranges []address.Range) {
+	new := []address.Address{}
 	for _, r := range ranges {
 		new = add(new, r.Start, r.End)
 	}

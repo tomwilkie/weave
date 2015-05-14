@@ -1,6 +1,7 @@
-package ip
+package address
 
 import (
+	"github.com/weaveworks/weave/common"
 	"net"
 )
 
@@ -44,13 +45,6 @@ func Add(addr Address, i Offset) Address {
 }
 
 func Subtract(a, b Address) Offset {
-	Assert(a >= b)
+	common.Assert(a >= b)
 	return Offset(a - b)
-}
-
-// Assert test is true, panic otherwise
-func Assert(test bool) {
-	if !test {
-		panic("Assertion failure")
-	}
 }

@@ -6,7 +6,7 @@ import (
 	"expvar"
 	"strconv"
 
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/ipam/address"
 )
 
 var (
@@ -27,7 +27,7 @@ func (i _uint32) String() string {
 }
 
 func (r *Ring) updateExportedVariables() {
-	ringName := utils.AddressIP4(r.Start).String()
+	ringName := address.AddressIP4(r.Start).String()
 	expRingSize.Set(ringName, _uint32(r.End-r.Start))
 	expRingEntries.Set(ringName, _int(len(r.Entries)))
 }

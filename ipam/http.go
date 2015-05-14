@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/weaveworks/weave/common"
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/ipam/address"
 )
 
 func badRequest(w http.ResponseWriter, err error) {
@@ -29,7 +29,7 @@ func (alloc *Allocator) HandleHTTP(router *mux.Router) {
 			return
 		}
 
-		if err := alloc.Claim(ident, utils.IP4Address(ip), closedChan); err != nil {
+		if err := alloc.Claim(ident, address.IP4Address(ip), closedChan); err != nil {
 			badRequest(w, fmt.Errorf("Unable to claim IP address %s: %s", ip, err))
 			return
 		}

@@ -4,63 +4,63 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/ipam/address"
 	wt "github.com/weaveworks/weave/testing"
 )
 
-func makeSpace(start utils.Address, size utils.Offset) *Space {
+func makeSpace(start address.Address, size address.Offset) *Space {
 	s := New()
 	s.Add(start, size)
 	return s
 }
 
-func ip(s string) utils.Address { return utils.ParseIP(s) }
+func ip(s string) address.Address { return address.ParseIP(s) }
 
 func TestLowlevel(t *testing.T) {
-	a := []utils.Address{}
+	a := []address.Address{}
 	a = add(a, 100, 200)
-	wt.AssertEquals(t, a, []utils.Address{100, 200})
+	wt.AssertEquals(t, a, []address.Address{100, 200})
 	wt.AssertTrue(t, !contains(a, 99), "")
 	wt.AssertTrue(t, contains(a, 100), "")
 	wt.AssertTrue(t, contains(a, 199), "")
 	wt.AssertTrue(t, !contains(a, 200), "")
 	a = add(a, 700, 800)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 700, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 700, 800})
 	a = add(a, 300, 400)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 300, 400, 700, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 300, 400, 700, 800})
 	a = add(a, 400, 500)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 300, 500, 700, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 300, 500, 700, 800})
 	a = add(a, 600, 700)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 300, 500, 600, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 300, 500, 600, 800})
 	a = add(a, 500, 600)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 300, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 300, 800})
 	a = subtract(a, 500, 600)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 300, 500, 600, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 300, 500, 600, 800})
 	a = subtract(a, 600, 700)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 300, 500, 700, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 300, 500, 700, 800})
 	a = subtract(a, 400, 500)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 300, 400, 700, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 300, 400, 700, 800})
 	a = subtract(a, 300, 400)
-	wt.AssertEquals(t, a, []utils.Address{100, 200, 700, 800})
+	wt.AssertEquals(t, a, []address.Address{100, 200, 700, 800})
 	a = subtract(a, 700, 800)
-	wt.AssertEquals(t, a, []utils.Address{100, 200})
+	wt.AssertEquals(t, a, []address.Address{100, 200})
 	a = subtract(a, 100, 200)
-	wt.AssertEquals(t, a, []utils.Address{})
+	wt.AssertEquals(t, a, []address.Address{})
 
 	s := New()
-	wt.AssertEquals(t, s.NumFreeAddresses(), utils.Offset(0))
+	wt.AssertEquals(t, s.NumFreeAddresses(), address.Offset(0))
 	ok, got := s.Allocate()
 	wt.AssertFalse(t, ok, "allocate in empty space should fail")
 
 	s.Add(100, 100)
-	wt.AssertEquals(t, s.NumFreeAddresses(), utils.Offset(100))
+	wt.AssertEquals(t, s.NumFreeAddresses(), address.Offset(100))
 	ok, got = s.Allocate()
 	wt.AssertTrue(t, ok && got == 100, "allocate")
-	wt.AssertEquals(t, s.NumFreeAddresses(), utils.Offset(99))
+	wt.AssertEquals(t, s.NumFreeAddresses(), address.Offset(99))
 	wt.AssertNoErr(t, s.Claim(150))
-	wt.AssertEquals(t, s.NumFreeAddresses(), utils.Offset(98))
+	wt.AssertEquals(t, s.NumFreeAddresses(), address.Offset(98))
 	wt.AssertNoErr(t, s.Free(100))
-	wt.AssertEquals(t, s.NumFreeAddresses(), utils.Offset(99))
+	wt.AssertEquals(t, s.NumFreeAddresses(), address.Offset(99))
 	wt.AssertErrorInterface(t, s.Free(0), (*error)(nil), "free not allocated")
 	wt.AssertErrorInterface(t, s.Free(100), (*error)(nil), "double free")
 
@@ -88,28 +88,28 @@ func TestSpaceAllocate(t *testing.T) {
 		containerID = "deadbeef"
 	)
 
-	space1 := makeSpace(utils.ParseIP(testAddr1), 20)
-	wt.AssertEquals(t, space1.NumFreeAddresses(), utils.Offset(20))
+	space1 := makeSpace(address.ParseIP(testAddr1), 20)
+	wt.AssertEquals(t, space1.NumFreeAddresses(), address.Offset(20))
 	space1.assertInvariants()
 
 	_, addr1 := space1.Allocate()
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
-	wt.AssertEquals(t, space1.NumFreeAddresses(), utils.Offset(19))
+	wt.AssertEquals(t, space1.NumFreeAddresses(), address.Offset(19))
 	space1.assertInvariants()
 
 	_, addr2 := space1.Allocate()
 	wt.AssertNotEqualString(t, addr2.String(), testAddr1, "address")
-	wt.AssertEquals(t, space1.NumFreeAddresses(), utils.Offset(18))
-	wt.AssertEquals(t, space1.NumFreeAddressesInRange(utils.ParseIP(testAddr1), utils.ParseIP(testAddrx)), utils.Offset(13))
-	wt.AssertEquals(t, space1.NumFreeAddressesInRange(utils.ParseIP(testAddr1), utils.ParseIP(testAddry)), utils.Offset(18))
+	wt.AssertEquals(t, space1.NumFreeAddresses(), address.Offset(18))
+	wt.AssertEquals(t, space1.NumFreeAddressesInRange(address.ParseIP(testAddr1), address.ParseIP(testAddrx)), address.Offset(13))
+	wt.AssertEquals(t, space1.NumFreeAddressesInRange(address.ParseIP(testAddr1), address.ParseIP(testAddry)), address.Offset(18))
 	space1.assertInvariants()
 
 	space1.Free(addr2)
 	space1.assertInvariants()
 
 	wt.AssertErrorInterface(t, space1.Free(addr2), (*error)(nil), "double free")
-	wt.AssertErrorInterface(t, space1.Free(utils.ParseIP(testAddrx)), (*error)(nil), "address not allocated")
-	wt.AssertErrorInterface(t, space1.Free(utils.ParseIP(testAddry)), (*error)(nil), "wrong out of range")
+	wt.AssertErrorInterface(t, space1.Free(address.ParseIP(testAddrx)), (*error)(nil), "address not allocated")
+	wt.AssertErrorInterface(t, space1.Free(address.ParseIP(testAddry)), (*error)(nil), "wrong out of range")
 
 	space1.assertInvariants()
 }
@@ -122,11 +122,11 @@ func TestSpaceFree(t *testing.T) {
 		containerID = "deadbeef"
 	)
 
-	space := makeSpace(utils.ParseIP(testAddr1), 20)
+	space := makeSpace(address.ParseIP(testAddr1), 20)
 
 	// Check we are prepared to give up the entire space
 	pos, size := space.biggestFreeRange()
-	wt.AssertTrue(t, space.free[pos] == utils.ParseIP(testAddr1) && size == 20, "Wrong space")
+	wt.AssertTrue(t, space.free[pos] == address.ParseIP(testAddr1) && size == 20, "Wrong space")
 
 	for i := 0; i < 20; i++ {
 		ok, _ := space.Allocate()
@@ -140,37 +140,37 @@ func TestSpaceFree(t *testing.T) {
 	wt.AssertTrue(t, size == 0, "Wrong space")
 
 	// Free in the middle
-	wt.AssertSuccess(t, space.Free(utils.ParseIP("10.0.3.13")))
+	wt.AssertSuccess(t, space.Free(address.ParseIP("10.0.3.13")))
 	pos, size = space.biggestFreeRange()
-	wt.AssertTrue(t, space.free[pos] == utils.ParseIP("10.0.3.13") && size == 1, "Wrong space")
+	wt.AssertTrue(t, space.free[pos] == address.ParseIP("10.0.3.13") && size == 1, "Wrong space")
 
 	// Free one at the end
-	wt.AssertSuccess(t, space.Free(utils.ParseIP("10.0.3.23")))
+	wt.AssertSuccess(t, space.Free(address.ParseIP("10.0.3.23")))
 	pos, size = space.biggestFreeRange()
-	wt.AssertTrue(t, space.free[pos] == utils.ParseIP("10.0.3.23") && size == 1, "Wrong space")
+	wt.AssertTrue(t, space.free[pos] == address.ParseIP("10.0.3.23") && size == 1, "Wrong space")
 
 	// Now free a few at the end
-	wt.AssertSuccess(t, space.Free(utils.ParseIP("10.0.3.22")))
-	wt.AssertSuccess(t, space.Free(utils.ParseIP("10.0.3.21")))
+	wt.AssertSuccess(t, space.Free(address.ParseIP("10.0.3.22")))
+	wt.AssertSuccess(t, space.Free(address.ParseIP("10.0.3.21")))
 
-	wt.AssertEquals(t, space.NumFreeAddresses(), utils.Offset(4))
+	wt.AssertEquals(t, space.NumFreeAddresses(), address.Offset(4))
 
 	// Now get the biggest free space; should be 3.21
 	pos, size = space.biggestFreeRange()
-	wt.AssertTrue(t, space.free[pos] == utils.ParseIP("10.0.3.21") && size == 3, "Wrong space")
+	wt.AssertTrue(t, space.free[pos] == address.ParseIP("10.0.3.21") && size == 3, "Wrong space")
 
 	// Now free a few in the middle
-	wt.AssertSuccess(t, space.Free(utils.ParseIP("10.0.3.12")))
-	wt.AssertSuccess(t, space.Free(utils.ParseIP("10.0.3.11")))
-	wt.AssertSuccess(t, space.Free(utils.ParseIP("10.0.3.10")))
+	wt.AssertSuccess(t, space.Free(address.ParseIP("10.0.3.12")))
+	wt.AssertSuccess(t, space.Free(address.ParseIP("10.0.3.11")))
+	wt.AssertSuccess(t, space.Free(address.ParseIP("10.0.3.10")))
 
-	wt.AssertEquals(t, space.NumFreeAddresses(), utils.Offset(7))
+	wt.AssertEquals(t, space.NumFreeAddresses(), address.Offset(7))
 
 	// Now get the biggest free space; should be 3.21
 	pos, size = space.biggestFreeRange()
-	wt.AssertTrue(t, space.free[pos] == utils.ParseIP("10.0.3.10") && size == 4, "Wrong space")
+	wt.AssertTrue(t, space.free[pos] == address.ParseIP("10.0.3.10") && size == 4, "Wrong space")
 
-	wt.AssertEquals(t, space.OwnedRanges(), []utils.Range{utils.Range{Start: ip("10.0.3.4"), End: ip("10.0.3.24")}})
+	wt.AssertEquals(t, space.OwnedRanges(), []address.Range{address.Range{Start: ip("10.0.3.4"), End: ip("10.0.3.24")}})
 }
 
 func (s1 *Space) Equal(s2 *Space) bool {
@@ -184,7 +184,7 @@ func TestDonateSimple(t *testing.T) {
 	)
 
 	var (
-		ipAddr1 = utils.ParseIP(testAddr1)
+		ipAddr1 = address.ParseIP(testAddr1)
 	)
 
 	ps1 := makeSpace(ipAddr1, 48)
@@ -193,8 +193,8 @@ func TestDonateSimple(t *testing.T) {
 	start, numGivenUp, ok := ps1.Donate()
 	wt.AssertBool(t, ok, true, "Donate result")
 	wt.AssertEqualString(t, start.String(), "10.0.1.24", "Invalid start")
-	wt.AssertEquals(t, numGivenUp, utils.Offset(24))
-	wt.AssertEquals(t, ps1.NumFreeAddresses(), utils.Offset(24))
+	wt.AssertEquals(t, numGivenUp, address.Offset(24))
+	wt.AssertEquals(t, ps1.NumFreeAddresses(), address.Offset(24))
 
 	// Now check we can give the rest up.
 	count := 0 // count to avoid infinite loop
@@ -205,42 +205,42 @@ func TestDonateSimple(t *testing.T) {
 		}
 		numGivenUp += size
 	}
-	wt.AssertEquals(t, ps1.NumFreeAddresses(), utils.Offset(0))
-	wt.AssertEquals(t, numGivenUp, utils.Offset(48))
+	wt.AssertEquals(t, ps1.NumFreeAddresses(), address.Offset(0))
+	wt.AssertEquals(t, numGivenUp, address.Offset(48))
 }
 
 func TestDonateHard(t *testing.T) {
 	//common.InitDefaultLogging(true)
 	var (
-		start              = utils.ParseIP("10.0.1.0")
-		size  utils.Offset = 48
+		start                = address.ParseIP("10.0.1.0")
+		size  address.Offset = 48
 	)
 
 	// Fill a fresh space
 	spaceset := makeSpace(start, size)
-	for i := utils.Offset(0); i < size; i++ {
+	for i := address.Offset(0); i < size; i++ {
 		ok, _ := spaceset.Allocate()
 		wt.AssertTrue(t, ok, "Failed to get IP!")
 	}
 
-	wt.AssertEquals(t, spaceset.NumFreeAddresses(), utils.Offset(0))
+	wt.AssertEquals(t, spaceset.NumFreeAddresses(), address.Offset(0))
 
 	// Now free all but the last address
 	// this will force us to split the free list
-	for i := utils.Offset(0); i < size-1; i++ {
-		wt.AssertSuccess(t, spaceset.Free(utils.Add(start, i)))
+	for i := address.Offset(0); i < size-1; i++ {
+		wt.AssertSuccess(t, spaceset.Free(address.Add(start, i)))
 	}
 
 	// Now split
 	newRange, numGivenUp, ok := spaceset.Donate()
 	wt.AssertBool(t, ok, true, "GiveUpSpace result")
-	wt.AssertEquals(t, newRange, utils.ParseIP("10.0.1.23"))
-	wt.AssertEquals(t, numGivenUp, utils.Offset(24))
-	wt.AssertEquals(t, spaceset.NumFreeAddresses(), utils.Offset(23))
+	wt.AssertEquals(t, newRange, address.ParseIP("10.0.1.23"))
+	wt.AssertEquals(t, numGivenUp, address.Offset(24))
+	wt.AssertEquals(t, spaceset.NumFreeAddresses(), address.Offset(23))
 
 	//Space set should now have 2 spaces
 	expected := New()
 	expected.Add(start, 23)
-	expected.ours = add(nil, utils.ParseIP("10.0.1.47"), utils.ParseIP("10.0.1.48"))
+	expected.ours = add(nil, address.ParseIP("10.0.1.47"), address.ParseIP("10.0.1.48"))
 	wt.AssertEquals(t, spaceset, expected)
 }

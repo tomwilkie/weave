@@ -3,7 +3,7 @@ package ipam
 import (
 	"fmt"
 
-	"github.com/weaveworks/weave/ipam/utils"
+	"github.com/weaveworks/weave/ipam/address"
 	"github.com/weaveworks/weave/router"
 )
 
@@ -11,7 +11,7 @@ type claim struct {
 	resultChan       chan<- error
 	hasBeenCancelled func() bool
 	ident            string
-	addr             utils.Address
+	addr             address.Address
 }
 
 // Try returns true for success (or failure), false if we need to try again later
