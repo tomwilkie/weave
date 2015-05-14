@@ -44,6 +44,10 @@ func listenHTTP(port int, alloc *Allocator) {
 	}
 }
 
+func allocURL(port int, containerID string) string {
+	return fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID)
+}
+
 func TestHttp(t *testing.T) {
 	var (
 		containerID = "deadbeef"
@@ -63,20 +67,20 @@ func TestHttp(t *testing.T) {
 
 	alloc.claimRingForTesting()
 	// Ask the http server for a new address
-	cidr1 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1 := HTTPPost(t, allocURL(port, containerID))
 	wt.AssertEqualString(t, cidr1, testAddr1+netSuffix, "address")
 
 	// Ask the http server for another address and check it's different
-	cidr2 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
+	cidr2 := HTTPPost(t, allocURL(port, container2))
 	wt.AssertNotEqualString(t, cidr2, testAddr1+netSuffix, "address")
 
 	// Ask for the first container again and we should get the same address again
-	cidr1a := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1a := HTTPPost(t, allocURL(port, containerID))
 	wt.AssertEqualString(t, cidr1a, testAddr1+netSuffix, "address")
 
 	// Now free the first one, and we should get it back when we ask
-	doHTTP("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
-	cidr3 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
+	doHTTP("DELETE", allocURL(port, containerID))
+	cidr3 := HTTPPost(t, allocURL(port, container3))
 	wt.AssertEqualString(t, cidr3, testAddr1+netSuffix, "address")
 
 	// Would like to shut down the http server at the end of this test
@@ -97,7 +101,7 @@ func TestBadHttp(t *testing.T) {
 	go listenHTTP(port, alloc)
 
 	alloc.claimRingForTesting()
-	cidr1 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1 := HTTPPost(t, allocURL(port, containerID))
 	parts := strings.Split(cidr1, "/")
 	testAddr1 := parts[0]
 	// Verb that's not handled
@@ -141,7 +145,7 @@ func impTestHTTPCancel(t *testing.T) {
 
 	// Ask the http server for a new address
 	done := make(chan *http.Response)
-	req, _ := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID), nil)
+	req, _ := http.NewRequest("POST", allocURL(port, containerID), nil)
 	go func() {
 		res, _ := http.DefaultClient.Do(req)
 		done <- res
