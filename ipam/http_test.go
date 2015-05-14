@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/mux"
+
 	"github.com/weaveworks/weave/common"
 	wt "github.com/weaveworks/weave/testing"
 )
@@ -29,15 +31,15 @@ func doHTTP(method string, url string) (resp *http.Response, err error) {
 }
 
 func listenHTTP(port int, alloc *Allocator) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+	router := mux.NewRouter()
+	router.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, fmt.Sprintln(alloc))
 	})
-	alloc.HandleHTTP(mux)
+	alloc.HandleHTTP(router)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+		Handler: router,
 	}
 	if err := srv.ListenAndServe(); err != nil {
 		common.Error.Fatal("Unable to create http listener: ", err)
@@ -107,7 +109,7 @@ func TestBadHttp(t *testing.T) {
 	// Verb that's not handled
 	resp, err := doHTTP("HEAD", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
 	wt.AssertNoErr(t, err)
-	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
+	wt.AssertStatus(t, resp.StatusCode, http.StatusNotFound, "http response")
 	// Mis-spelled URL
 	resp, err = doHTTP("POST", fmt.Sprintf("http://localhost:%d/xip/%s/", port, containerID))
 	wt.AssertNoErr(t, err)
@@ -115,7 +117,7 @@ func TestBadHttp(t *testing.T) {
 	// Malformed URL
 	resp, err = doHTTP("POST", fmt.Sprintf("http://localhost:%d/ip/%s/foo/bar/baz", port, containerID))
 	wt.AssertNoErr(t, err)
-	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
+	wt.AssertStatus(t, resp.StatusCode, http.StatusNotFound, "http response")
 }
 
 func TestHTTPCancel(t *testing.T) {

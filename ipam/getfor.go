@@ -6,8 +6,8 @@ import (
 )
 
 type allocateResult struct {
-	ok   bool
 	addr utils.Address
+	err  error
 }
 
 type allocate struct {
@@ -25,14 +25,14 @@ func (g *allocate) Try(alloc *Allocator) bool {
 
 	// If we have previously stored an address for this container, return it.
 	if addr, found := alloc.owned[g.ident]; found {
-		g.resultChan <- allocateResult{true, addr}
+		g.resultChan <- allocateResult{addr, nil}
 		return true
 	}
 
 	if ok, addr := alloc.space.Allocate(); ok {
 		alloc.debugln("Allocated", addr, "for", g.ident)
 		alloc.addOwned(g.ident, addr)
-		g.resultChan <- allocateResult{true, addr}
+		g.resultChan <- allocateResult{addr, nil}
 		return true
 	}
 
@@ -46,7 +46,7 @@ func (g *allocate) Try(alloc *Allocator) bool {
 }
 
 func (g *allocate) Cancel() {
-	g.resultChan <- allocateResult{false, 0}
+	g.resultChan <- allocateResult{0, fmt.Errorf("Request Cancelled")}
 }
 
 func (g *allocate) String() string {

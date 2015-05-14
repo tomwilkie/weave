@@ -107,7 +107,7 @@ func (alloc *Allocator) Start() {
 	go alloc.actorLoop(actionChan)
 }
 
-// Make the actor routine exit, for test purposes ONLY because any
+// Stop makes the actor routine exit, for test purposes ONLY because any
 // calls after this is processed will hang. Async.
 func (alloc *Allocator) Stop() {
 	alloc.actionChan <- nil
@@ -206,13 +206,13 @@ func hasBeenCancelled(cancelChan <-chan bool) func() bool {
 
 // Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
-func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) (bool, utils.Address) {
+func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) (utils.Address, error) {
 	resultChan := make(chan allocateResult)
 	op := &allocate{resultChan: resultChan, ident: ident,
 		hasBeenCancelled: hasBeenCancelled(cancelChan)}
 	alloc.doOperation(op, &alloc.pendingAllocates)
 	result := <-resultChan
-	return result.ok, result.addr
+	return result.addr, result.err
 }
 
 // Claim an address that we think we should own (Sync)
