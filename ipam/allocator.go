@@ -77,7 +77,7 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, subnetCIDR str
 	if subnetSize < 4 {
 		return nil, errors.New("Allocation subnet too small")
 	}
-	subnetStart := address.IP4Address(subnet.IP)
+	subnetStart := address.FromIP4(subnet.IP)
 	alloc := &Allocator{
 		ourName:     ourName,
 		subnetStart: subnetStart,

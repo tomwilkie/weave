@@ -14,11 +14,11 @@ type Range struct {
 }
 
 func ParseIP(s string) Address {
-	return IP4Address(net.ParseIP(s))
+	return FromIP4(net.ParseIP(s))
 }
 
-// IP4Address converts an ipv4 address to our integer address type
-func IP4Address(ip4 net.IP) (r Address) {
+// FromIP4 converts an ipv4 address to our integer address type
+func FromIP4(ip4 net.IP) (r Address) {
 	for _, b := range ip4.To4() {
 		r <<= 8
 		r |= Address(b)
@@ -26,18 +26,18 @@ func IP4Address(ip4 net.IP) (r Address) {
 	return
 }
 
-// AddressIP4 converts our integer address type to an ipv4 address
-func AddressIP4(key Address) (r net.IP) {
+// IP4 converts our integer address type to an ipv4 address
+func (addr Address) IP4() (r net.IP) {
 	r = make([]byte, net.IPv4len)
 	for i := 3; i >= 0; i-- {
-		r[i] = byte(key)
-		key >>= 8
+		r[i] = byte(addr)
+		addr >>= 8
 	}
 	return
 }
 
 func (addr Address) String() string {
-	return AddressIP4(addr).String()
+	return addr.IP4().String()
 }
 
 func Add(addr Address, i Offset) Address {

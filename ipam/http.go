@@ -29,7 +29,7 @@ func (alloc *Allocator) HandleHTTP(router *mux.Router) {
 			return
 		}
 
-		if err := alloc.Claim(ident, address.IP4Address(ip), closedChan); err != nil {
+		if err := alloc.Claim(ident, address.FromIP4(ip), closedChan); err != nil {
 			badRequest(w, fmt.Errorf("Unable to claim IP address %s: %s", ip, err))
 			return
 		}

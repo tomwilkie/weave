@@ -230,7 +230,7 @@ func (r *Ring) Merge(gossip Ring) error {
 			switch {
 			case mine.Version >= theirs.Version:
 				if mine.Version == theirs.Version && !mine.Equal(theirs) {
-					common.Debug.Printf("Error merging entries at %s - %v != %v\n", address.AddressIP4(mine.Token), mine, theirs)
+					common.Debug.Printf("Error merging entries at %s - %v != %v\n", mine.Token, mine, theirs)
 					return ErrInvalidEntry
 				}
 				addToResult(*mine)
@@ -347,14 +347,14 @@ func (r *Ring) ClaimItAll() {
 }
 
 func (r *Ring) FprintWithNicknames(w io.Writer, m map[router.PeerName]string) {
-	fmt.Fprintf(w, "Ring [%s, %s)\n", address.AddressIP4(r.Start), address.AddressIP4(r.End))
+	fmt.Fprintf(w, "Ring [%s, %s)\n", r.Start, r.End)
 	for _, entry := range r.Entries {
 		nickname, found := m[entry.Peer]
 		if found {
 			nickname = fmt.Sprintf(" (%s)", nickname)
 		}
 
-		fmt.Fprintf(w, "  %s -> %s%s (version: %d, free: %d)\n", address.AddressIP4(entry.Token),
+		fmt.Fprintf(w, "  %s -> %s%s (version: %d, free: %d)\n", entry.Token,
 			entry.Peer, nickname, entry.Version, entry.Free)
 	}
 }
