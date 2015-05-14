@@ -2,7 +2,6 @@ package ipam
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -23,13 +22,10 @@ func (alloc *Allocator) HandleHTTP(router *mux.Router) {
 		vars := mux.Vars(r)
 		ident := vars["id"]
 		ipStr := vars["ip"]
-		ip := net.ParseIP(ipStr)
-		if ip == nil {
-			badRequest(w, fmt.Errorf("Invalid IP in request: %s", ipStr))
+		if ip, err := address.ParseIP(ipStr); err != nil {
+			badRequest(w, err)
 			return
-		}
-
-		if err := alloc.Claim(ident, address.FromIP4(ip), closedChan); err != nil {
+		} else if err := alloc.Claim(ident, ip, closedChan); err != nil {
 			badRequest(w, fmt.Errorf("Unable to claim IP address %s: %s", ip, err))
 			return
 		}

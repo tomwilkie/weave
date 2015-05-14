@@ -388,7 +388,8 @@ func TestAllocatorFuzz(t *testing.T) {
 		//common.Info.Printf("Asking for %s on allocator %d again", addr, res.alloc)
 
 		newAddr, _ := alloc.Allocate(res.name, nil)
-		if newAddr != address.ParseIP(addr) {
+		oldAddr, _ := address.ParseIP(addr)
+		if newAddr != oldAddr {
 			panic(fmt.Sprintf("Got different address for repeat request"))
 		}
 	}

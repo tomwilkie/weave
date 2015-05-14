@@ -13,8 +13,12 @@ type Range struct {
 	Start, End Address // [Start, End); Start <= End
 }
 
-func ParseIP(s string) Address {
-	return FromIP4(net.ParseIP(s))
+func ParseIP(s string) (Address, error) {
+	if ip := net.ParseIP(s); ip == nil {
+		return 0, &net.ParseError{Type: "IP Address", Text: s}
+	} else {
+		return FromIP4(ip), nil
+	}
 }
 
 // FromIP4 converts an ipv4 address to our integer address type
