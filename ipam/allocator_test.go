@@ -33,22 +33,22 @@ func TestAllocFree(t *testing.T) {
 	defer alloc.Stop()
 
 	alloc.claimRingForTesting()
-	_, addr1 := alloc.Allocate(container1, nil)
+	addr1, _ := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
 	// Ask for another address for a different container and check it's different
-	_, addr2 := alloc.Allocate(container2, nil)
+	addr2, _ := alloc.Allocate(container2, nil)
 	if addr2.String() == testAddr1 {
 		t.Fatalf("Expected different address but got %s", addr2.String())
 	}
 
 	// Ask for the first container again and we should get the same address again
-	_, addr1a := alloc.Allocate(container1, nil)
+	addr1a, _ := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1a.String(), testAddr1, "address")
 
 	// Now free the first one, and we should get it back when we ask
 	wt.AssertSuccess(t, alloc.Free(container1))
-	_, addr3 := alloc.Allocate(container3, nil)
+	addr3, _ := alloc.Allocate(container3, nil)
 	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
 
 	alloc.ContainerDied(container2)
@@ -128,7 +128,7 @@ func TestAllocatorClaim(t *testing.T) {
 	defer alloc.Stop()
 
 	alloc.claimRingForTesting()
-	_, addr1 := alloc.Allocate(container1, nil)
+	addr1, _ := alloc.Allocate(container1, nil)
 	alloc.Allocate(container2, nil)
 
 	// Now free the first one, and try to claim it
@@ -136,7 +136,7 @@ func TestAllocatorClaim(t *testing.T) {
 	t.Log(alloc)
 	err := alloc.Claim(container3, addr1, nil)
 	wt.AssertNoErr(t, err)
-	_, addr3 := alloc.Allocate(container3, nil)
+	addr3, _ := alloc.Allocate(container3, nil)
 	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
 }
 
@@ -175,9 +175,9 @@ func TestCancel(t *testing.T) {
 	alloc1.OnGossipBroadcast(alloc2.encode())
 
 	// Get some IPs, so each allocator has some space
-	_, res1 := alloc1.Allocate("foo", nil)
+	res1, _ := alloc1.Allocate("foo", nil)
 	common.Debug.Printf("res1 = %s", res1.String())
-	_, res2 := alloc2.Allocate("bar", nil)
+	res2, _ := alloc2.Allocate("bar", nil)
 	common.Debug.Printf("res2 = %s", res2.String())
 	if res1 == res2 {
 		wt.Fatalf(t, "Error: got same ips!")
@@ -194,8 +194,8 @@ func TestCancel(t *testing.T) {
 	cancelChan := make(chan bool, 1)
 	doneChan := make(chan bool)
 	go func() {
-		ok, _ := alloc1.Allocate("baz", cancelChan)
-		doneChan <- ok
+		_, ok := alloc1.Allocate("baz", cancelChan)
+		doneChan <- ok == nil
 	}()
 
 	AssertNothingSent(t, doneChan)
@@ -221,13 +221,13 @@ func TestGossipShutdown(t *testing.T) {
 	defer alloc.Stop()
 
 	alloc.claimRingForTesting()
-	_, addr1 := alloc.Allocate(container1, nil)
+	addr1, _ := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
 	alloc.Shutdown()
 
-	ok, _ := alloc.Allocate(container2, nil) // trying to allocate after shutdown should fail
-	wt.AssertFalse(t, ok, "no address")
+	_, err := alloc.Allocate(container2, nil) // trying to allocate after shutdown should fail
+	wt.AssertFalse(t, err == nil, "no address")
 
 	CheckAllExpectedMessagesSent(alloc)
 }
@@ -241,11 +241,11 @@ func TestTransfer(t *testing.T) {
 	alloc2 := allocs[1]
 	alloc3 := allocs[2] // This will be 'master' and get the first range
 
-	ok, _ := alloc2.Allocate("foo", nil)
-	wt.AssertTrue(t, ok, "Failed to get address")
+	_, err := alloc2.Allocate("foo", nil)
+	wt.AssertTrue(t, err == nil, "Failed to get address")
 
-	ok, _ = alloc3.Allocate("bar", nil)
-	wt.AssertTrue(t, ok, "Failed to get address")
+	_, err = alloc3.Allocate("bar", nil)
+	wt.AssertTrue(t, err == nil, "Failed to get address")
 
 	router.GossipBroadcast(alloc2.Gossip())
 	router.GossipBroadcast(alloc3.Gossip())
@@ -258,8 +258,8 @@ func TestTransfer(t *testing.T) {
 
 	wt.AssertEquals(t, alloc1.space.NumFreeAddresses(), utils.Offset(1022))
 
-	ok, _ = alloc1.Allocate("foo", nil)
-	wt.AssertTrue(t, ok, "Failed to get address")
+	_, err = alloc1.Allocate("foo", nil)
+	wt.AssertTrue(t, err == nil, "Failed to get address")
 	alloc1.Stop()
 }
 
@@ -274,8 +274,7 @@ func TestFakeRouterSimple(t *testing.T) {
 	alloc1 := allocs[0]
 	//alloc2 := allocs[1]
 
-	_, addr := alloc1.Allocate("foo", nil)
-
+	addr, _ := alloc1.Allocate("foo", nil)
 	println("Got addr", addr)
 }
 
@@ -332,9 +331,9 @@ func TestAllocatorFuzz(t *testing.T) {
 		allocIndex := rand.Int31n(nodes)
 		alloc := allocs[allocIndex]
 		//common.Info.Printf("Allocate: asking allocator %d", allocIndex)
-		ok, addr := alloc.Allocate(name, nil)
+		addr, err := alloc.Allocate(name, nil)
 
-		if !ok {
+		if err != nil {
 			panic(fmt.Sprintf("Could not allocate addr"))
 		}
 
@@ -388,7 +387,7 @@ func TestAllocatorFuzz(t *testing.T) {
 
 		//common.Info.Printf("Asking for %s on allocator %d again", addr, res.alloc)
 
-		_, newAddr := alloc.Allocate(res.name, nil)
+		newAddr, _ := alloc.Allocate(res.name, nil)
 		if newAddr != utils.ParseIP(addr) {
 			panic(fmt.Sprintf("Got different address for repeat request"))
 		}
