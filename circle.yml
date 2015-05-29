@@ -37,7 +37,7 @@ test:
   override:
     - docker run -v /var/run/docker.sock:/run/docker.sock -v /home/ubuntu:/home/go weaveworks/weave-build:
         parallel: true
-    - cd $SRCDIR/test; ./gce.sh setup:
+    - cd $SRCDIR/test; ./gce.sh setup | while IFS= read -r line; do echo "$(date) $line"; done:
         parallel: true
     - cd $SRCDIR/test; . ./gce.sh hosts; ./setup.sh:
         parallel: true
