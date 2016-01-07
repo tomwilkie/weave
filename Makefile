@@ -81,7 +81,7 @@ $(EXES) $(VENDOR_UPTODATE):
 	$(SUDO) docker run $(RM) $(RUN_FLAGS) \
 	    -v $(shell pwd):/go/src/github.com/weaveworks/weave \
 		-v $(shell pwd)/.pkg:/go/pkg \
-		-e GOARCH -e GOOS \
+		-e GOARCH -e GOOS -e COVERAGE \
 		$(BUILD_IMAGE) WEAVE_VERSION=$(WEAVE_VERSION) $@
 
 else
