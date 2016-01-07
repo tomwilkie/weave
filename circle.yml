@@ -12,7 +12,6 @@ machine:
     SRCDIR: /home/ubuntu/src/github.com/weaveworks/weave
     PATH: $PATH:$HOME/.local/bin:$HOME/google-cloud-sdk/bin/
     CLOUDSDK_CORE_DISABLE_PROMPTS: 1
-    WEAVE_TEST: $HOME/docker/weave-test.tar
 
 dependencies:
   post:

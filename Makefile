@@ -61,7 +61,7 @@ PACKAGE_BASE=$(shell go list -e ./)
 all: $(WEAVE_EXPORT) $(RUNNER_EXE) $(TEST_TLS_EXE)
 
 $(EXES): $(VENDOR_UPTODATE) $(BUILD_UPTODATE)
-$(VENDOR_UPTODATE): vendor/manifest
+$(VENDOR_UPTODATE): vendor/manifest $(BUILD_UPTODATE)
 $(WEAVER_EXE) $(WEAVEPROXY_EXE): common/*.go common/*/*.go net/*.go
 $(WEAVER_EXE): router/*.go mesh/*.go ipam/*.go ipam/*/*.go nameserver/*.go prog/weaver/*.go
 $(WEAVEPROXY_EXE): proxy/*.go prog/weaveproxy/*.go
@@ -144,13 +144,13 @@ $(DOCKER_DISTRIB):
 	curl -o $(DOCKER_DISTRIB) $(DOCKER_DISTRIB_URL)
 
 ifeq ($(BUILD_IN_CONTAINER),true)
-tests: $(BUILD_UPTODATE) tools/.git
+tests: $(BUILD_UPTODATE) $(VENDOR_UPTODATE) tools/.git
 	$(SUDO) docker run $(RM) $(RUN_FLAGS) \
 		-v $(shell pwd):/go/src/github.com/weaveworks/weave \
 		-e GOARCH -e GOOS -e CIRCLECI -e CIRCLE_BUILD_NUM -e CIRCLE_NODE_TOTAL -e CIRCLE_NODE_INDEX -e COVERDIR\
 		$(BUILD_IMAGE) tests
 else
-tests: tools/.git
+tests: $(BUILD_UPTODATE) $(VENDOR_UPTODATE) tools/.git
 	./tools/test -no-go-get
 endif
 
