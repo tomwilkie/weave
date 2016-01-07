@@ -5,6 +5,9 @@ PUBLISH=publish_weave publish_weaveexec publish_plugin
 
 # If you can use docker without being root, you can do "make SUDO="
 SUDO=sudo
+BUILD_IN_CONTAINER=true
+RM=--rm
+RUN_FLAGS=-ti
 
 DOCKERHUB_USER=weaveworks
 WEAVE_VERSION=git-$(shell git rev-parse --short=12 HEAD)
@@ -23,17 +26,20 @@ TEST_TLS_EXE=test/tls/tls
 
 EXES=$(WEAVER_EXE) $(SIGPROXY_EXE) $(WEAVEPROXY_EXE) $(WEAVEWAIT_EXE) $(WEAVEWAIT_NOOP_EXE) $(WEAVEWAIT_NOMCAST_EXE) $(NETCHECK_EXE) $(DOCKERTLSARGS_EXE) $(DOCKERPLUGIN_EXE) $(TEST_TLS_EXE)
 
+BUILD_UPTODATE=.build.uptodate
 WEAVER_UPTODATE=.weaver.uptodate
 WEAVEEXEC_UPTODATE=.weaveexec.uptodate
 DOCKERPLUGIN_UPTODATE=.dockerplugin.uptodate
+VENDOR_UPTODATE=.vendor.uptodate
 
-IMAGES_UPTODATE=$(WEAVER_UPTODATE) $(WEAVEEXEC_UPTODATE) $(DOCKERPLUGIN_UPTODATE)
+IMAGES_UPTODATE=$(WEAVER_UPTODATE) $(WEAVEEXEC_UPTODATE) $(DOCKERPLUGIN_UPTODATE) $(BUILD_UPTODATE)
 
 WEAVER_IMAGE=$(DOCKERHUB_USER)/weave
 WEAVEEXEC_IMAGE=$(DOCKERHUB_USER)/weaveexec
 DOCKERPLUGIN_IMAGE=$(DOCKERHUB_USER)/plugin
+BUILD_IMAGE=$(DOCKERHUB_USER)/weavebuild
 
-IMAGES=$(WEAVER_IMAGE) $(WEAVEEXEC_IMAGE) $(DOCKERPLUGIN_IMAGE)
+IMAGES=$(WEAVER_IMAGE) $(WEAVEEXEC_IMAGE) $(DOCKERPLUGIN_IMAGE) $(BUILD_IMAGE)
 
 WEAVE_EXPORT=weave.tar.gz
 
@@ -48,59 +54,67 @@ NETGO_CHECK=@strings $@ | grep cgo_stub\\\.go >/dev/null || { \
 	echo "    sudo go install -tags netgo std"; \
 	false; \
 }
-BUILD_FLAGS=-ldflags "-extldflags \"-static\" -X main.version $(WEAVE_VERSION)" -tags netgo
+BUILD_FLAGS=-i -ldflags "-extldflags \"-static\" -X main.version=$(WEAVE_VERSION)" -tags netgo
 
 PACKAGE_BASE=$(shell go list -e ./)
 
 all: $(WEAVE_EXPORT) $(RUNNER_EXE) $(TEST_TLS_EXE)
 
-travis: $(EXES)
-
-update:
-	go get -u -f -v -tags netgo $(addprefix ./,$(dir $(EXES)))
-
+$(EXES): $(VENDOR_UPTODATE) $(BUILD_UPTODATE)
+$(VENDOR_UPTODATE): vendor/manifest
 $(WEAVER_EXE) $(WEAVEPROXY_EXE): common/*.go common/*/*.go net/*.go
-ifeq ($(COVERAGE),true)
-	$(eval COVERAGE_MODULES := $(shell (go list ./$(@D); go list -f '{{join .Deps "\n"}}' ./$(@D) | grep "^$(PACKAGE_BASE)/") | paste -s -d,))
-	go get -t -tags netgo ./$(@D)
-	go test -c -o ./$@ $(BUILD_FLAGS) -v -covermode=atomic -coverpkg $(COVERAGE_MODULES) ./$(@D)/
-else
-	go get -tags netgo ./$(@D)
-	go build $(BUILD_FLAGS) -o $@ ./$(@D)
-endif
-	$(NETGO_CHECK)
-
-$(NETCHECK_EXE): common/*.go common/*/*.go net/*.go
-	go get -tags netgo ./$(@D)
-	go build $(BUILD_FLAGS) -o $@ ./$(@D)
-	$(NETGO_CHECK)
-
 $(WEAVER_EXE): router/*.go mesh/*.go ipam/*.go ipam/*/*.go nameserver/*.go prog/weaver/*.go
 $(WEAVEPROXY_EXE): proxy/*.go prog/weaveproxy/*.go
-$(NETCHECK_EXE): prog/netcheck/*.go
-
-# These next programs need separate rules as they fail the netgo check in
-# the main build stanza due to not importing net package
+$(WEAVEWAIT_EXE): prog/weavewait/*.go net/*.go
+$(WEAVEWAIT_NOMCAST_EXE): prog/weavewait/*.go net/*.go
+$(WEAVEWAIT_NOOP_EXE): prog/weavewait/*.go
+$(NETCHECK_EXE): common/*.go common/*/*.go net/*.go prog/netcheck/*.go
 $(SIGPROXY_EXE): prog/sigproxy/*.go
 $(DOCKERTLSARGS_EXE): prog/docker_tls_args/*.go
 $(DOCKERPLUGIN_EXE): prog/plugin/*.go plugin/net/*.go plugin/ipam/*.go plugin/skel/*.go api/*.go common/docker/*.go
 $(TEST_TLS_EXE): test/tls/*.go
 
-$(SIGPROXY_EXE) $(DOCKERTLSARGS_EXE) $(DOCKERPLUGIN_EXE) $(TEST_TLS_EXE):
-	go get -tags netgo ./$(@D)
+ifeq ($(BUILD_IN_CONTAINER),true)
+
+$(EXES) $(VENDOR_UPTODATE):
+	@mkdir -p $(shell pwd)/.pkg
+	$(SUDO) docker run $(RM) $(RUN_FLAGS) \
+	    -v $(shell pwd):/go/src/github.com/weaveworks/weave \
+		-v $(shell pwd)/.pkg:/go/pkg \
+		-e GOARCH -e GOOS \
+		$(BUILD_IMAGE) WEAVE_VERSION=$(WEAVE_VERSION) $@
+
+else
+
+$(VENDOR_UPTODATE):
+	gvt rebuild
+	touch $@
+
+$(WEAVER_EXE) $(WEAVEPROXY_EXE): $(BUILD_UPTODATE) $(VENDOR_UPTODATE)
+ifeq ($(COVERAGE),true)
+	$(eval COVERAGE_MODULES := $(shell (go list ./$(@D); go list -f '{{join .Deps "\n"}}' ./$(@D) | grep "^$(PACKAGE_BASE)/") | paste -s -d,))
+	go test -c -o ./$@ $(BUILD_FLAGS) -v -covermode=atomic -coverpkg $(COVERAGE_MODULES) ./$(@D)/
+else
+	go build $(BUILD_FLAGS) -o $@ ./$(@D)
+endif
+	$(NETGO_CHECK)
+
+# These next programs need separate rules as they fail the netgo check in
+# the main build stanza due to not importing net package
+$(WEAVEWAIT_NOOP_EXE) $(NETCHECK_EXE) $(SIGPROXY_EXE) $(DOCKERTLSARGS_EXE) $(DOCKERPLUGIN_EXE) $(TEST_TLS_EXE): $(BUILD_UPTODATE) $(VENDOR_UPTODATE)
 	go build $(BUILD_FLAGS) -o $@ ./$(@D)
 
-$(WEAVEWAIT_EXE): prog/weavewait/*.go net/*.go
-	go get -tags netgo ./$(@D)
+$(WEAVEWAIT_EXE): $(BUILD_UPTODATE) $(VENDOR_UPTODATE)
 	go build $(BUILD_FLAGS) -tags "netgo iface mcast" -o $@ ./$(@D)
 
-$(WEAVEWAIT_NOMCAST_EXE): prog/weavewait/*.go net/*.go
-	go get -tags netgo ./$(@D)
+$(WEAVEWAIT_NOMCAST_EXE): $(BUILD_UPTODATE) $(VENDOR_UPTODATE)
 	go build $(BUILD_FLAGS) -tags "netgo iface" -o $@ ./$(@D)
 
-$(WEAVEWAIT_NOOP_EXE): prog/weavewait/*.go
-	go get -tags netgo ./$(@D)
-	go build $(BUILD_FLAGS) -o $@ ./$(@D)
+endif
+
+$(BUILD_UPTODATE): build/*
+	$(SUDO) docker build -t $(BUILD_IMAGE) build/
+	touch $@
 
 $(WEAVER_UPTODATE): prog/weaver/Dockerfile $(WEAVER_EXE)
 	$(SUDO) DOCKER_HOST=$(DOCKER_HOST) docker build -t $(WEAVER_IMAGE) prog/weaver
@@ -129,8 +143,16 @@ $(WEAVE_EXPORT): $(IMAGES_UPTODATE)
 $(DOCKER_DISTRIB):
 	curl -o $(DOCKER_DISTRIB) $(DOCKER_DISTRIB_URL)
 
+ifeq ($(BUILD_IN_CONTAINER),true)
+tests: $(BUILD_UPTODATE) tools/.git
+	$(SUDO) docker run $(RM) $(RUN_FLAGS) \
+		-v $(shell pwd):/go/src/github.com/weaveworks/weave \
+		-e GOARCH -e GOOS -e CIRCLECI -e CIRCLE_BUILD_NUM -e CIRCLE_NODE_TOTAL -e CIRCLE_NODE_INDEX -e COVERDIR\
+		$(BUILD_IMAGE) tests
+else
 tests: tools/.git
-	tools/test
+	./tools/test -no-go-get
+endif
 
 lint: tools/.git
 	tools/lint -nocomment -notestpackage .
@@ -153,7 +175,7 @@ publish: $(PUBLISH)
 clean-bin:
 	-$(SUDO) DOCKER_HOST=$(DOCKER_HOST) docker rmi $(IMAGES)
 	go clean -r $(addprefix ./,$(dir $(EXES)))
-	rm -f $(EXES) $(IMAGES_UPTODATE) $(WEAVE_EXPORT)
+	rm -rf $(EXES) $(IMAGES_UPTODATE) $(WEAVE_EXPORT) .pkg
 
 clean: clean-bin
 	rm -rf test/tls/*.pem test/coverage.* test/coverage
